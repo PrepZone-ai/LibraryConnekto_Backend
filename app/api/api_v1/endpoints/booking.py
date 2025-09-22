@@ -137,206 +137,142 @@ async def create_student_seat_booking(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_student)
 ):
-    """Create a new seat booking request for authenticated students"""
-    # Get library details
-    library = db.query(AdminDetails).filter(AdminDetails.id == booking_data.library_id).first()
-    if not library:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Library not found"
-        )
-    
-    # Check if library has available seats
-    occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.id).filter(
-        SeatBooking.library_id == booking_data.library_id,
-        SeatBooking.status.in_(["active", "approved"]),
-        Student.is_active == True,
-        Student.subscription_status != "Removed"
-    ).count()
-    
-    if occupied_seats >= library.total_seats:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No seats available in this library"
-        )
-    
-    # Get subscription plan details if provided
-    subscription_plan = None
-    if booking_data.subscription_plan_id:
-        subscription_plan = db.query(SubscriptionPlan).filter(
-            SubscriptionPlan.id == booking_data.subscription_plan_id,
-            SubscriptionPlan.library_id == booking_data.library_id,
-            SubscriptionPlan.is_active == True
-        ).first()
-        
-        if not subscription_plan:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Subscription plan not found or inactive"
-            )
-    
-    # Create booking
-    booking = SeatBooking(
-        student_id=current_user["user_id"],
-        library_id=booking_data.library_id,
-        admin_id=library.user_id,
-        seat_id=booking_data.seat_id,
-        subscription_plan_id=booking_data.subscription_plan_id,
-        amount=booking_data.amount or (subscription_plan.discounted_amount if subscription_plan else None),
-        date=booking_data.date,
-        start_time=booking_data.start_time,
-        end_time=booking_data.end_time,
-        purpose=booking_data.purpose
+    """Deprecated: Students must pay Rs.1 token amount before submitting booking.
+    Use /booking/student-seat-booking/payment-init and /booking/student-seat-booking/payment-verify instead."""
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Pre-payment required. Please initiate Rs.1 Razorpay token payment and verify before submitting booking."
     )
-    
-    db.add(booking)
-    db.commit()
-    db.refresh(booking)
-    
-    # Send booking submission email
-    email_sent = False
-    email_status = "No email address available"
-    
-    try:
-        from app.services.email_service import email_service
-        from app.models.student import Student
-        
-        # Get student details for email
-        student = db.query(Student).filter(Student.auth_user_id == current_user["user_id"]).first()
-        
-        if student:
-            if student.email and student.email.strip():
-                # Prepare booking details for email
-                booking_details = {
-                    'amount': float(booking.amount) if booking.amount else 0,
-                    'subscription_months': 1,  # Default for student bookings
-                    'created_at': booking.created_at
-                }
-                
-                # Send submission email
-                email_result = email_service.send_booking_submission_email(
-                    email=student.email.strip(),
-                    student_name=student.name or "Student",
-                    library_name=library.library_name,
-                    booking_details=booking_details
-                )
-                
-                if not email_result.get("success"):
-                    print(f"❌ Failed to send submission email to {student.email}: {email_result.get('error')}")
-                    print(f"📊 Email attempts: {email_result.get('attempts', 'N/A')}")
-                    email_status = f"Failed to send email: {email_result.get('error')}"
-                else:
-                    print(f"✅ Submission email sent successfully to {student.email}")
-                    print(f"📊 Email attempts: {email_result.get('attempts', 1)}")
-                    email_sent = True
-                    email_status = f"Email sent successfully to {student.email}"
-            else:
-                print(f"⚠️ Student {student.name} has no email address - skipping email notification")
-                email_status = "Student has no email address"
-        else:
-            print(f"⚠️ Student not found for user_id {current_user['user_id']} - skipping email notification")
-            email_status = "Student not found"
-                
-    except Exception as e:
-        print(f"❌ Error sending submission email: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        email_status = f"Error sending email: {str(e)}"
-        # Don't fail the booking creation if email fails
-    
-    # Add email status to booking response
-    booking.email_sent = email_sent
-    booking.email_status = email_status
-    
-    return booking
 
 @router.post("/anonymous-seat-booking", response_model=SeatBookingResponse)
 async def create_anonymous_seat_booking(
     booking_data: SeatBookingCreate,
     db: Session = Depends(get_db)
 ):
-    """Create a new seat booking request for anonymous users (no authentication required)"""
-    # Get library details
-    library = db.query(AdminDetails).filter(AdminDetails.id == booking_data.library_id).first()
+    """Deprecated: Anonymous users must pay Rs.1 token amount before submitting booking.
+    Use /booking/anonymous-seat-booking/payment-init and /booking/anonymous-seat-booking/payment-verify instead."""
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Pre-payment required. Please initiate Rs.1 Razorpay token payment and verify before submitting booking."
+    )
+
+@router.post("/anonymous-seat-booking/payment-init")
+async def init_anonymous_booking_token_payment(
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    """Initiate Rs.1 token payment for anonymous booking."""
+    from app.services.razorpay_service import razorpay_service
+    library_id = payload.get("library_id")
+    if not library_id:
+        raise HTTPException(status_code=400, detail="library_id is required")
+    library = db.query(AdminDetails).filter(AdminDetails.id == library_id).first()
     if not library:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Library not found"
-        )
-    
-    # Check if library has available seats
+        raise HTTPException(status_code=404, detail="Library not found")
+    # Optional plan data
+    subscription_plan_id = payload.get("subscription_plan_id")
+    if subscription_plan_id:
+        plan = db.query(SubscriptionPlan).filter(
+            SubscriptionPlan.id == subscription_plan_id,
+            SubscriptionPlan.library_id == library_id,
+            SubscriptionPlan.is_active == True
+        ).first()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Subscription plan not found or inactive")
+    # Razorpay receipt must be <= 40 chars
+    lib_short = str(library_id)[:8]
+    ts = int(datetime.utcnow().timestamp())
+    receipt_id = f"atok_{lib_short}_{ts}"
+    notes = {
+        "type": "booking_token_anonymous",
+        "library_id": str(library_id),
+        "subscription_plan_id": str(subscription_plan_id) if subscription_plan_id else "",
+        "name": payload.get("name") or "",
+        "email": payload.get("email") or "",
+        "mobile": payload.get("mobile") or ""
+    }
+    result = razorpay_service.create_order(amount=100, currency="INR", receipt=receipt_id, notes=notes)
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=f"Failed to create token payment order: {result['error']}")
+    return result["order"]
+
+@router.post("/anonymous-seat-booking/payment-verify", response_model=SeatBookingResponse)
+async def verify_anonymous_booking_token_payment(
+    payload: dict,
+    db: Session = Depends(get_db)
+):
+    """Verify Rs.1 token payment and create anonymous pending booking."""
+    from app.services.razorpay_service import razorpay_service
+    required_fields = ["razorpay_order_id", "razorpay_payment_id", "razorpay_signature", "library_id",
+                       "name", "email", "mobile", "address", "subscription_months"]
+    missing = [f for f in required_fields if not payload.get(f)]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing fields: {', '.join(missing)}")
+    verification = razorpay_service.verify_payment(
+        razorpay_order_id=payload["razorpay_order_id"],
+        razorpay_payment_id=payload["razorpay_payment_id"],
+        razorpay_signature=payload["razorpay_signature"]
+    )
+    if not verification["success"] or not verification["verified"]:
+        raise HTTPException(status_code=400, detail="Token payment verification failed")
+    # Capacity check
+    library_id = payload["library_id"]
+    library = db.query(AdminDetails).filter(AdminDetails.id == library_id).first()
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
     occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.id).filter(
-        SeatBooking.library_id == booking_data.library_id,
+        SeatBooking.library_id == library_id,
         SeatBooking.status.in_(["active", "approved"]),
         Student.is_active == True,
         Student.subscription_status != "Removed"
     ).count()
-    
     if occupied_seats >= library.total_seats:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="No seats available in this library"
-        )
-    
-    # Create booking for anonymous user
+        raise HTTPException(status_code=400, detail="No seats available in this library")
+    # Create pending anonymous booking
     booking = SeatBooking(
-        student_id=None,  # No student ID for anonymous bookings
-        library_id=booking_data.library_id,
+        student_id=None,
+        library_id=library_id,
         admin_id=library.user_id,
-        **booking_data.model_dump(exclude={"library_id"})
+        name=payload["name"],
+        email=payload["email"],
+        mobile=payload["mobile"],
+        address=payload["address"],
+        subscription_months=payload.get("subscription_months"),
+        seat_id=payload.get("seat_id"),
+        subscription_plan_id=payload.get("subscription_plan_id"),
+        amount=payload.get("amount"),
+        date=payload.get("date"),
+        start_time=payload.get("start_time"),
+        end_time=payload.get("end_time"),
+        purpose=payload.get("purpose"),
+        status="pending",
+        payment_status="token_paid",
+        payment_method="razorpay",
+        payment_reference=payload["razorpay_payment_id"]
     )
-    
     db.add(booking)
     db.commit()
     db.refresh(booking)
-    
-    # Send booking submission email
-    email_sent = False
-    email_status = "No email address provided"
-    
+    # Send submission confirmation email to anonymous user
     try:
         from app.services.email_service import email_service
-        
-        if booking.email and booking.email.strip():
-            # Prepare booking details for email
-            booking_details = {
-                'amount': float(booking.amount) if booking.amount else 0,
-                'subscription_months': booking.subscription_months or 1,
-                'created_at': booking.created_at
-            }
-            
-            # Send submission email
+        # Prepare booking details for email
+        booking_details = {
+            'amount': float(booking.amount) if booking.amount else 0,
+            'subscription_months': booking.subscription_months or 1,
+            'created_at': booking.created_at
+        }
+        if booking.email:
             email_result = email_service.send_booking_submission_email(
                 email=booking.email.strip(),
                 student_name=booking.name or "User",
                 library_name=library.library_name,
                 booking_details=booking_details
             )
-            
             if not email_result.get("success"):
                 print(f"❌ Failed to send submission email to {booking.email}: {email_result.get('error')}")
-                print(f"📊 Email attempts: {email_result.get('attempts', 'N/A')}")
-                email_status = f"Failed to send email: {email_result.get('error')}"
-            else:
-                print(f"✅ Submission email sent successfully to {booking.email}")
-                print(f"📊 Email attempts: {email_result.get('attempts', 1)}")
-                email_sent = True
-                email_status = f"Email sent successfully to {booking.email}"
-        else:
-            print(f"⚠️ No email address provided - skipping email notification")
-            email_status = "No email address provided"
-            
     except Exception as e:
-        print(f"❌ Error sending submission email: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        email_status = f"Error sending email: {str(e)}"
-        # Don't fail the booking creation if email fails
-    
-    # Add email status to booking response
-    booking.email_sent = email_sent
-    booking.email_status = email_status
-    
+        print(f"❌ Error sending submission email (anonymous): {str(e)}")
     return booking
 
 @router.get("/seat-bookings", response_model=List[SeatBookingResponse])
@@ -463,6 +399,137 @@ async def update_seat_booking(
             print(f"Error sending rejection email: {str(e)}")
             # Don't fail the booking update if email fails
     
+    return booking
+
+@router.post("/student-seat-booking/payment-init")
+async def init_student_booking_token_payment(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_student)
+):
+    """Initiate Rs.1 token payment for student seat booking prior to submission."""
+    from app.services.razorpay_service import razorpay_service
+    # Validate required fields
+    library_id = payload.get("library_id")
+    if not library_id:
+        raise HTTPException(status_code=400, detail="library_id is required")
+    # Validate library exists
+    library = db.query(AdminDetails).filter(AdminDetails.id == library_id).first()
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
+    # Optional: validate plan if provided
+    subscription_plan_id = payload.get("subscription_plan_id")
+    if subscription_plan_id:
+        plan = db.query(SubscriptionPlan).filter(
+            SubscriptionPlan.id == subscription_plan_id,
+            SubscriptionPlan.library_id == library_id,
+            SubscriptionPlan.is_active == True
+        ).first()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Subscription plan not found or inactive")
+    # Create Razorpay order for Rs.1 (100 paise) - keep receipt <= 40 chars
+    user_short = str(current_user['user_id'])[:8]
+    lib_short = str(library_id)[:8]
+    ts = int(datetime.utcnow().timestamp())
+    receipt_id = f"tok_{user_short}_{lib_short}_{ts}"
+    notes = {
+        "type": "booking_token",
+        "student_id": str(current_user["user_id"]),
+        "library_id": str(library_id),
+        "subscription_plan_id": str(subscription_plan_id) if subscription_plan_id else ""
+    }
+    result = razorpay_service.create_order(amount=100, currency="INR", receipt=receipt_id, notes=notes)
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=f"Failed to create token payment order: {result['error']}")
+    return result["order"]
+
+@router.post("/student-seat-booking/payment-verify", response_model=SeatBookingResponse)
+async def verify_student_booking_token_payment(
+    payload: dict,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_student)
+):
+    """Verify Rs.1 token payment and create a pending booking request for admin review."""
+    from app.services.razorpay_service import razorpay_service
+    # Extract verification fields
+    required_fields = ["razorpay_order_id", "razorpay_payment_id", "razorpay_signature", "library_id", "date", "start_time", "end_time"]
+    missing = [f for f in required_fields if not payload.get(f)]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Missing fields: {', '.join(missing)}")
+    # Verify order signature
+    verification = razorpay_service.verify_payment(
+        razorpay_order_id=payload["razorpay_order_id"],
+        razorpay_payment_id=payload["razorpay_payment_id"],
+        razorpay_signature=payload["razorpay_signature"]
+    )
+    if not verification["success"] or not verification["verified"]:
+        raise HTTPException(status_code=400, detail="Token payment verification failed")
+    # Validate library capacity
+    library_id = payload["library_id"]
+    library = db.query(AdminDetails).filter(AdminDetails.id == library_id).first()
+    if not library:
+        raise HTTPException(status_code=404, detail="Library not found")
+    occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.id).filter(
+        SeatBooking.library_id == library_id,
+        SeatBooking.status.in_(["active", "approved"]),
+        Student.is_active == True,
+        Student.subscription_status != "Removed"
+    ).count()
+    if occupied_seats >= library.total_seats:
+        raise HTTPException(status_code=400, detail="No seats available in this library")
+    # Optional plan validation
+    subscription_plan_id = payload.get("subscription_plan_id")
+    plan = None
+    if subscription_plan_id:
+        plan = db.query(SubscriptionPlan).filter(
+            SubscriptionPlan.id == subscription_plan_id,
+            SubscriptionPlan.library_id == library_id,
+            SubscriptionPlan.is_active == True
+        ).first()
+        if not plan:
+            raise HTTPException(status_code=404, detail="Subscription plan not found or inactive")
+    # Create pending booking (admin will approve, main payment later)
+    booking = SeatBooking(
+        student_id=current_user["user_id"],
+        library_id=library_id,
+        admin_id=library.user_id,
+        seat_id=payload.get("seat_id"),
+        subscription_plan_id=subscription_plan_id,
+        amount=(plan.discounted_amount if plan else payload.get("amount")),
+        date=payload["date"],
+        start_time=payload["start_time"],
+        end_time=payload["end_time"],
+        purpose=payload.get("purpose"),
+        status="pending",
+        payment_status="token_paid",
+        payment_method="razorpay",
+        payment_reference=payload["razorpay_payment_id"]
+    )
+    db.add(booking)
+    db.commit()
+    db.refresh(booking)
+    # Send submission confirmation email to student
+    try:
+        from app.services.email_service import email_service
+        from app.models.student import Student as StudentModel
+        # Fetch student for email address
+        student = db.query(StudentModel).filter(StudentModel.auth_user_id == current_user["user_id"]).first()
+        if student and student.email:
+            booking_details = {
+                'amount': float(booking.amount) if booking.amount else 0,
+                'subscription_months': 1,  # token request for booking, actual months handled later
+                'created_at': booking.created_at
+            }
+            email_result = email_service.send_booking_submission_email(
+                email=student.email.strip(),
+                student_name=student.name or "Student",
+                library_name=library.library_name,
+                booking_details=booking_details
+            )
+            if not email_result.get("success"):
+                print(f"❌ Failed to send submission email to {student.email}: {email_result.get('error')}")
+    except Exception as e:
+        print(f"❌ Error sending submission email (student): {str(e)}")
     return booking
 
 @router.patch("/seat-bookings/{booking_id}", response_model=SeatBookingResponse)

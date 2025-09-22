@@ -106,8 +106,64 @@ Backend/
 │   ├── services/             # Email, notifications, payments, etc.
 │   ├── auth/                 # JWT utils and dependencies
 │   └── database.py           # Engine/session helpers
-└── uploads/                  # User-uploaded files (ignored by git)
+├── uploads/                  # User-uploaded files (ignored by git)
+├── Dockerfile                # Container image (Cloud Run ready)
+├── .dockerignore             # Build context excludes
+├── entrypoint.sh             # Runs Alembic migrations, starts Uvicorn
+├── deploy-cloudrun.sh        # Bash helper to build & deploy to Cloud Run
+├── deploy-cloudrun.ps1       # PowerShell helper to build & deploy to Cloud Run
+└── cloudbuild.yaml           # Optional Cloud Build CI to Cloud Run
 ```
+
+---
+
+## Docker (local)
+
+Build and run locally:
+```bash
+# from Backend/
+docker build -t libraryconnekto-backend:dev .
+docker run --rm -p 8080:8080 \
+  -e DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DB" \
+  -e SECRET_KEY=change-me -e JWT_ALGORITHM=HS256 -e ACCESS_TOKEN_EXPIRE_MINUTES=30 \
+  -e ALLOWED_ORIGINS=http://localhost:3000 \
+  libraryconnekto-backend:dev
+```
+Health: `http://localhost:8080/health`  |  Docs: `http://localhost:8080/docs`
+
+---
+
+## Deploy to Google Cloud Run
+
+Prereqs:
+- `gcloud` CLI installed and authenticated (`gcloud auth login`)
+- Enable required APIs: `gcloud services enable run.googleapis.com cloudbuild.googleapis.com`
+- A reachable PostgreSQL and its `DATABASE_URL`
+
+Option A — One command (bash):
+```bash
+# from Backend/
+./deploy-cloudrun.sh <PROJECT_ID> <REGION> <SERVICE_NAME>
+# then set required env vars (examples are commented in the script)
+```
+
+Option B — PowerShell (Windows):
+```powershell
+# from Backend\
+./deploy-cloudrun.ps1 -ProjectId <PROJECT_ID> -Region <REGION> -Service <SERVICE_NAME>
+```
+
+Option C — Cloud Build CI:
+```bash
+# from Backend/
+gcloud builds submit --config cloudbuild.yaml \
+  --substitutions=_SERVICE=<SERVICE>,_REGION=<REGION>,_IMAGE=gcr.io/$PROJECT_ID/<SERVICE>
+```
+
+Notes:
+- Cloud Run passes `$PORT` to the container; `entrypoint.sh` runs Alembic then Uvicorn.
+- Provide env vars with `--set-env-vars` or Secret Manager (`--set-secrets`).
+- For database connectivity from Cloud Run to Cloud SQL, add Cloud SQL connector flags as needed.
 
 ---
 
@@ -126,24 +182,15 @@ pytest -q
 ---
 
 ## Security & Secrets
-- Do not commit `.env`, credentials, or API keys. `.gitignore` excludes these.
-- GitHub Push Protection can block pushes if secrets are detected. If that happens, rotate secrets and remove them from history (e.g., `git filter-repo --replace-text`).
-
----
-
-## Deployment Tips
-- Set all env vars via your platform (Docker, Render, Fly, Railway, Heroku, etc.).
-- Use a managed PostgreSQL instance. Apply migrations on deploy.
-- Disable reload in production, set appropriate workers (e.g., `uvicorn --workers 2`).
-- Ensure `EMAIL_SCHEDULER_ENABLED` reflects your needs in production.
+- Do not commit `.env`, credentials, or API keys. `.dockerignore` excludes them.
+- Prefer Secret Manager for production secrets. Use `--set-secrets` with Cloud Run.
 
 ---
 
 ## Troubleshooting
-- Database connection errors: verify `DATABASE_URL` and network access.
-- CORS issues: confirm exact origins in `ALLOWED_ORIGINS`.
-- Emails not sending: check SMTP creds, port (`465` for SSL) and provider app passwords.
-- Migrations not applying: confirm Alembic `env.py` reads `DATABASE_URL` from env.
+- Database connection errors: verify `DATABASE_URL` and network/connector configuration.
+- 403 on Cloud Run: disable `--allow-unauthenticated` or configure IAM as needed.
+- Cold starts: consider minimum instances if needed.
 
 ---
 

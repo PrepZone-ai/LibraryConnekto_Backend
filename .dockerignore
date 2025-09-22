@@ -1,0 +1,40 @@
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pytest_cache
+.venv
+.env
+.env.*
+
+# VCS
+.git
+.gitignore
+
+# Byte-compiled / optimized / DLL files
+*.so
+
+# Tests
+.coverage
+htmlcov/
+
+# Build outputs
+build/
+dist/
+*.egg-info/
+
+# Node leftovers (if any)
+node_modules/
+
+# Local uploads and artifacts (mounted at runtime)
+uploads/
+
+# IDE/editor
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Alembic cache
+alembic/versions/__pycache__/

@@ -1,0 +1,38 @@
+# Cloud Build configuration to build and deploy Backend/ to Cloud Run
+# Invoke with substitutions, e.g.:
+# gcloud builds submit --config cloudbuild.yaml \
+#   --substitutions=_SERVICE=libraryconnekto-api,_REGION=asia-south1,_IMAGE=gcr.io/$PROJECT_ID/libraryconnekto-api
+
+substitutions:
+  _SERVICE: libraryconnekto-api
+  _REGION: asia-south1
+  _IMAGE: gcr.io/$PROJECT_ID/libraryconnekto-api
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', '${_IMAGE}:$SHORT_SHA', '.']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_IMAGE}:$SHORT_SHA']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run','deploy','${_SERVICE}',
+        '--image','${_IMAGE}:$SHORT_SHA',
+        '--region','${_REGION}',
+        '--platform','managed',
+        '--allow-unauthenticated',
+        '--port','8080',
+        '--cpu','1',
+        '--memory','512Mi',
+        '--max-instances','5'
+        # Add env vars via --set-env-vars or use Secret Manager with --set-secrets
+      ]
+
+images:
+  - '${_IMAGE}:$SHORT_SHA'
