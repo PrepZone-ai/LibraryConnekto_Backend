@@ -633,7 +633,7 @@ How to join:
 2) {cta_text}
 
 Happy learning!
-{(library_name + '  ') if library_name else ''}Powered by Library Connekto
+{library_name + ' • ' if library_name else ''}Powered by Library Connekto
         """
 
         # HTML version with branding
@@ -1155,6 +1155,10 @@ Powered by Library Connekto
         else:
             formatted_date = 'N/A'
         
+        # Prepare complex variables outside f-strings
+        payment_button_html = f'<a href="{payment_url}" class="cta-button"> Make Payment Now</a>' if payment_url else ''
+        subscription_duration = f"{subscription_months} month{'s' if subscription_months > 1 else ''}"
+        
         # Text version
         text_body = f"""
 Dear {student_name},
@@ -1163,7 +1167,7 @@ Dear {student_name},
 
 Your booking details:
 - Library: {library_name}
-- Subscription: {subscription_months} month{'s' if subscription_months > 1 else ''}
+- Subscription: {subscription_duration}
 - Amount: {amount}
 - Booking Date: {formatted_date}
 - Seat Number: {seat_number}
@@ -1410,7 +1414,7 @@ Powered by Library Connekto
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Subscription Duration</div>
-                        <div class="detail-value">{subscription_months} month{'s' if subscription_months > 1 else ''}</div>
+                        <div class="detail-value">{subscription_duration}</div>
                     </div>
                     <div class="detail-item amount-highlight">
                         <div class="detail-label">Amount to Pay</div>
@@ -1446,7 +1450,7 @@ Powered by Library Connekto
                     Complete your payment online to activate your subscription immediately.
                 </p>
                 
-                {f'<a href="{payment_url}" class="cta-button"> Make Payment Now</a>' if payment_url else ''}
+                {payment_button_html}
             </div>
             
             <div class="urgency-notice">
@@ -1504,6 +1508,9 @@ Powered by Library Connekto
         formatted_start = format_date(subscription_start)
         formatted_end = format_date(subscription_end)
         
+        # Prepare complex variables outside f-strings
+        subscription_duration = f"{subscription_months} month{'s' if subscription_months > 1 else ''}"
+        
         # Text version
         text_body = f"""
 Dear {student_name},
@@ -1516,7 +1523,7 @@ Payment Details:
 - Amount Paid: {amount}
 - Payment Method: Online Payment (Secure & Instant)
 - Transaction Reference: {payment_reference}
-- Subscription Duration: {subscription_months} month{'s' if subscription_months > 1 else ''}
+- Subscription Duration: {subscription_duration}
 
 Your Subscription:
 - Start Date: {formatted_start}
@@ -1789,7 +1796,7 @@ Powered by Library Connekto
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Subscription Duration</div>
-                        <div class="detail-value">{subscription_months} month{'s' if subscription_months > 1 else ''}</div>
+                        <div class="detail-value">{subscription_duration}</div>
                     </div>
                 </div>
             </div>
@@ -1871,6 +1878,9 @@ Powered by Library Connekto
         else:
             formatted_date = 'N/A'
         
+        # Prepare complex variables outside f-strings
+        subscription_duration = f"{subscription_months} month{'s' if subscription_months > 1 else ''}"
+        
         # Text version
         text_body = f"""
 Dear {student_name},
@@ -1879,7 +1889,7 @@ Dear {student_name},
 
 Booking Details:
 - Library: {library_name}
-- Subscription Duration: {subscription_months} month{'s' if subscription_months > 1 else ''}
+- Subscription Duration: {subscription_duration}
 - Amount: {amount}
 - Submission Date: {formatted_date}
 - Status:  Pending Review
@@ -2085,7 +2095,7 @@ Powered by Library Connekto
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Subscription Duration</div>
-                        <div class="detail-value">{subscription_months} month{'s' if subscription_months > 1 else ''}</div>
+                        <div class="detail-value">{subscription_duration}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Amount</div>
@@ -2172,6 +2182,9 @@ Powered by Library Connekto
         if not rejection_reason:
             rejection_reason = "Unfortunately, we are unable to accommodate your request at this time due to capacity constraints."
         
+        # Prepare complex variables outside f-strings
+        subscription_duration = f"{subscription_months} month{'s' if subscription_months > 1 else ''}"
+        
         # Text version
         text_body = f"""
 Dear {student_name},
@@ -2180,7 +2193,7 @@ Dear {student_name},
 
 Booking Details:
 - Library: {library_name}
-- Subscription Duration: {subscription_months} month{'s' if subscription_months > 1 else ''}
+- Subscription Duration: {subscription_duration}
 - Amount: {amount}
 - Booking Date: {formatted_date}
 - Status:  Rejected
@@ -2393,7 +2406,7 @@ Powered by Library Connekto
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Subscription Duration</div>
-                        <div class="detail-value">{subscription_months} month{'s' if subscription_months > 1 else ''}</div>
+                        <div class="detail-value">{subscription_duration}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Amount</div>
