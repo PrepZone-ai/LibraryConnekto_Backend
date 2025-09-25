@@ -1,0 +1,44 @@
+# LibraryConnekto Backend Environment Configuration Template
+# Copy this file to .env and fill in your values
+
+# Database Configuration (Required)
+DATABASE_URL=postgresql://username:password@hostname:5432/database_name
+
+# JWT Configuration (Required)
+SECRET_KEY=your-super-secret-key-here-change-me
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# CORS Configuration (Required)
+# Comma-separated list of allowed origins
+ALLOWED_ORIGINS=http://localhost:3000,http://127.0.0.1:3000,https://yourdomain.com
+
+# File Upload Configuration
+UPLOAD_DIR=uploads
+MAX_FILE_SIZE=10485760
+
+# SMTP Email Configuration (Optional)
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_USERNAME=your-email@gmail.com
+SMTP_PASSWORD=your-app-password
+
+# Razorpay Payment Configuration (Optional)
+RAZORPAY_KEY_ID=rzp_test_your_key_id
+RAZORPAY_KEY_SECRET=your_razorpay_secret
+
+# Scheduler and Notifications Configuration
+EMAIL_SCHEDULER_ENABLED=true
+SCHEDULER_INITIAL_DELAY_SECONDS=60
+SCHEDULER_LOOP_INTERVAL_SECONDS=60
+SUBSCRIPTION_CHECKS_DAILY_ENABLED=true
+SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED=false
+
+# Production Environment Variables
+PYTHONDONTWRITEBYTECODE=1
+PYTHONUNBUFFERED=1
+
+# Cloud Run Configuration (for deployment)
+PORT=8080
+UVICORN_WORKERS=2
+UVICORN_LOG_LEVEL=info
