@@ -11,17 +11,23 @@ echo "==> Starting LibraryConnekto Backend (FastAPI)"
 echo "PORT=${PORT}  WORKERS=${UVICORN_WORKERS}  LOG_LEVEL=${UVICORN_LOG_LEVEL}"
 echo "User: $(whoami)"
 
-# Database migrations
-if [ -f "alembic.ini" ]; then
-  echo "==> Running Alembic migrations"
-  python -m alembic upgrade head || {
-    echo "❌ Alembic migration failed" >&2
-    exit 1
-  }
-  echo "✅ Database migrations completed"
-else
-  echo "⚠️  alembic.ini not found, skipping migrations"
-fi
+# Database connection test - Skip migrations if tables exist
+echo "==> Testing database connection..."
+python test_db_connection.py && {
+  echo "✅ Database connection successful - skipping migrations"
+} || {
+  echo "⚠️  Database connection failed or no tables found"
+  echo "==> Running Alembic migrations..."
+  if [ -f "alembic.ini" ]; then
+    python -m alembic upgrade head || {
+      echo "❌ Alembic migration failed" >&2
+      exit 1
+    }
+    echo "✅ Database migrations completed"
+  else
+    echo "⚠️  alembic.ini not found, skipping migrations"
+  fi
+}
 
 # Ensure uploads directory exists at runtime
 mkdir -p uploads/profile_images || true
