@@ -10,9 +10,6 @@ from app.models import Base
 from app.services.notification_scheduler import start_notification_scheduler, stop_notification_scheduler
 from app.core.config import settings
 
-# Ensure database and tables exist
-init_db()
-
 # Create FastAPI app
 app = FastAPI(
     title="Library Management System API",
@@ -51,8 +48,13 @@ async def options_handler():
 @app.on_event("startup")
 async def startup_event():
     """Create database tables on startup and start notification scheduler"""
-    # This will create all tables defined in models
-    # In production, use Alembic migrations instead
+    # Initialize database and create tables
+    try:
+        init_db()
+        print("✅ Database initialization completed")
+    except Exception as e:
+        print(f"⚠️  Database initialization failed: {e}")
+        # Don't exit, let the app start anyway
     
     # Start the notification scheduler if enabled
     if getattr(settings, "EMAIL_SCHEDULER_ENABLED", True):
