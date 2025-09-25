@@ -169,14 +169,14 @@ class EmailService:
     
     def send_student_password_setup_email(self, email: str, student_id: str, mobile_no: str, token: str, library_name: str, base_url: str) -> Dict[str, Any]:
         """Send password setup email to student with mobile number as initial password"""
-        subject = f"🎓 Welcome to {library_name} - Set Your Password"
+        subject = f" Welcome to {library_name} - Set Your Password"
         
         # Create setup URL
         setup_url = f"{base_url}api/v1/student/set-password?token={token}"
         
         # Text version
         text_body = f"""
-🎓 WELCOME TO {library_name.upper()}!
+ WELCOME TO {library_name.upper()}!
 
 Hello!
 
@@ -191,7 +191,7 @@ IMPORTANT: Please set your own secure password by clicking the link below:
 
 If the link doesn't work, copy and paste it into your browser.
 
-⏰ This link will expire in 24 hours for security reasons.
+ This link will expire in 24 hours for security reasons.
 
 What's Next?
 1. Set your password using the link above
@@ -301,7 +301,7 @@ Powered by Library Connekto
             position: relative;
         }}
         .login-details::before {{
-            content: '🔐';
+            content: '';
             position: absolute;
             top: -15px;
             left: 20px;
@@ -496,8 +496,8 @@ Powered by Library Connekto
     <div class="email-container">
         <div class="header">
             <div class="header-content">
-                <div class="logo">📚 Library Connekto</div>
-                <h1>🎓 Welcome to {library_name}!</h1>
+                <div class="logo"> Library Connekto</div>
+                <h1> Welcome to {library_name}!</h1>
                 <p>Your learning journey starts here</p>
             </div>
         </div>
@@ -508,7 +508,7 @@ Powered by Library Connekto
             </div>
             
             <div class="welcome-badge">
-                🎉 You have been successfully registered in {library_name}!
+                 You have been successfully registered in {library_name}!
             </div>
             
             <p style="font-size: 16px; color: #495057; margin-bottom: 20px;">
@@ -516,7 +516,7 @@ Powered by Library Connekto
             </p>
             
             <div class="login-details">
-                <h3>🔐 Your Login Credentials</h3>
+                <h3> Your Login Credentials</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Username (Student ID)</div>
@@ -530,12 +530,12 @@ Powered by Library Connekto
             </div>
             
             <div class="password-section">
-                <h3>🔒 Set Your Secure Password</h3>
+                <h3> Set Your Secure Password</h3>
                 <p style="color: #856404; margin-bottom: 20px;">
                     <strong>Important:</strong> Please set your own secure password to protect your account.
                 </p>
                 
-                <a href="{setup_url}" class="cta-button">🔐 Set My Password</a>
+                <a href="{setup_url}" class="cta-button"> Set My Password</a>
                 
                 <p style="font-size: 14px; color: #856404; margin-top: 15px;">
                     If the button doesn't work, copy and paste this link into your browser:
@@ -546,11 +546,11 @@ Powered by Library Connekto
             </div>
             
             <div class="security-notice">
-                <strong>⏰ Security Notice:</strong> This password setup link will expire in 24 hours for your security. Please set your password as soon as possible.
+                <strong> Security Notice:</strong> This password setup link will expire in 24 hours for your security. Please set your password as soon as possible.
             </div>
             
             <div class="next-steps">
-                <h3>🚀 What's Next?</h3>
+                <h3> What's Next?</h3>
                 <ul class="steps-list">
                     <li>
                         <span class="step-number">1</span>
@@ -572,17 +572,17 @@ Powered by Library Connekto
             </div>
             
             <div class="help-section">
-                <h3>🆘 Need Help?</h3>
+                <h3> Need Help?</h3>
                 <div class="help-item">
-                    <span class="help-icon">📞</span>
+                    <span class="help-icon"></span>
                     <span>Contact: [Library Contact Info]</span>
                 </div>
                 <div class="help-item">
-                    <span class="help-icon">📧</span>
+                    <span class="help-icon"></span>
                     <span>Support: [Support Email]</span>
                 </div>
                 <div class="help-item">
-                    <span class="help-icon">🌐</span>
+                    <span class="help-icon"></span>
                     <span>Website: [Library Website]</span>
                 </div>
             </div>
@@ -594,15 +594,15 @@ Powered by Library Connekto
         
         <div class="footer">
             <div class="branding">
-                <h4>📚 {library_name}</h4>
+                <h4> {library_name}</h4>
                 <p>Your trusted learning partner</p>
             </div>
             <p>Powered by <strong>Library Connekto</strong></p>
             <p>Connecting students with knowledge</p>
             <div class="social-links">
-                <a href="#">📧</a>
-                <a href="#">📱</a>
-                <a href="#">🌐</a>
+                <a href="#"></a>
+                <a href="#"></a>
+                <a href="#"></a>
             </div>
             <p style="font-size: 12px; opacity: 0.8; margin-top: 20px;">
                 This is an automated message. Please do not reply to this email.
@@ -633,7 +633,7 @@ How to join:
 2) {cta_text}
 
 Happy learning!
-{(library_name + ' • ') if library_name else ''}Powered by Library Connekto
+{(library_name + '  ') if library_name else ''}Powered by Library Connekto
         """
 
         # HTML version with branding
@@ -661,7 +661,7 @@ Happy learning!
       <p>Use this referral code during sign-up:</p>
       <p class=\"code\">{referral_code}</p>
       {('<p><a href=\"' + invite_url + '\" class=\"cta\">Join now</a></p>') if invite_url else ''}
-      <p class=\"brand\">{(library_name + ' • ') if library_name else ''}Powered by Library Connekto</p>
+      <p class=\"brand\">{(library_name + '  ') if library_name else ''}Powered by Library Connekto</p>
     </div>
   </body>
 </html>
@@ -734,16 +734,16 @@ Library Management Team
                                       plan_name: str, amount: float, payment_id: str, 
                                       subscription_end: str, base_url: str = "") -> Dict[str, Any]:
         """Send payment confirmation email with subscription extension details"""
-        subject = f"✅ Payment Successful - {plan_name} Subscription Renewed!"
+        subject = f" Payment Successful - {plan_name} Subscription Renewed!"
         
         text_body = f"""
 Hello {student_name}!
 
-🎉 Great news! Your payment has been processed successfully and your subscription has been renewed.
+ Great news! Your payment has been processed successfully and your subscription has been renewed.
 
 Payment Details:
 - Plan: {plan_name}
-- Amount: ₹{amount}
+- Amount: {amount}
 - Payment ID: {payment_id}
 - Subscription Valid Until: {subscription_end}
 
@@ -1009,8 +1009,8 @@ Powered by Library Connekto
     <div class="email-container">
         <div class="header">
             <div class="header-content">
-                <div class="logo">📚 Library Connekto</div>
-                <h1>✅ Payment Successful!</h1>
+                <div class="logo"> Library Connekto</div>
+                <h1> Payment Successful!</h1>
                 <p>Your subscription has been renewed</p>
             </div>
         </div>
@@ -1021,7 +1021,7 @@ Powered by Library Connekto
             </div>
             
             <div class="success-badge">
-                🎉 Payment Processed Successfully!
+                 Payment Processed Successfully!
             </div>
             
             <p style="font-size: 16px; color: #495057; margin-bottom: 20px;">
@@ -1030,7 +1030,7 @@ Powered by Library Connekto
             </p>
             
             <div class="payment-details">
-                <h3>💳 Payment Details</h3>
+                <h3> Payment Details</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Plan Name</div>
@@ -1038,7 +1038,7 @@ Powered by Library Connekto
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Amount Paid</div>
-                        <div class="detail-value">₹{amount}</div>
+                        <div class="detail-value">{amount}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Payment ID</div>
@@ -1052,7 +1052,7 @@ Powered by Library Connekto
             </div>
             
             <div class="subscription-info">
-                <h3>📅 Subscription Extension Details</h3>
+                <h3> Subscription Extension Details</h3>
                 <p style="margin: 0 0 10px 0; font-size: 16px;">Your subscription is now valid until:</p>
                 <div class="subscription-end">{subscription_end}</div>
                 <p style="margin: 10px 0 0 0; font-size: 14px; opacity: 0.9;">
@@ -1061,43 +1061,43 @@ Powered by Library Connekto
             </div>
             
             <div class="cta-section">
-                <a href="{base_url}student/dashboard" class="cta-button">🚀 Access Your Dashboard</a>
+                <a href="{base_url}student/dashboard" class="cta-button"> Access Your Dashboard</a>
             </div>
             
             <div class="features-section">
-                <h3>🎯 What You Can Access Now</h3>
+                <h3> What You Can Access Now</h3>
                 <div class="features-grid">
                     <div class="feature-item">
-                        <div class="feature-icon">📚</div>
+                        <div class="feature-icon"></div>
                         <div class="feature-text">Library Resources</div>
                     </div>
                     <div class="feature-item">
-                        <div class="feature-icon">📖</div>
+                        <div class="feature-icon"></div>
                         <div class="feature-text">Study Materials</div>
                     </div>
                     <div class="feature-item">
-                        <div class="feature-icon">💻</div>
+                        <div class="feature-icon"></div>
                         <div class="feature-text">Digital Access</div>
                     </div>
                     <div class="feature-item">
-                        <div class="feature-icon">👥</div>
+                        <div class="feature-icon"></div>
                         <div class="feature-text">Community Support</div>
                     </div>
                 </div>
             </div>
             
             <div class="help-section">
-                <h3>🆘 Need Help?</h3>
+                <h3> Need Help?</h3>
                 <div class="help-item">
-                    <span class="help-icon">📞</span>
+                    <span class="help-icon"></span>
                     <span>Contact: [Library Contact Info]</span>
                 </div>
                 <div class="help-item">
-                    <span class="help-icon">📧</span>
+                    <span class="help-icon"></span>
                     <span>Support: [Support Email]</span>
                 </div>
                 <div class="help-item">
-                    <span class="help-icon">🌐</span>
+                    <span class="help-icon"></span>
                     <span>Website: [Library Website]</span>
                 </div>
             </div>
@@ -1109,15 +1109,15 @@ Powered by Library Connekto
         
         <div class="footer">
             <div class="branding">
-                <h4>📚 {library_name}</h4>
+                <h4> {library_name}</h4>
                 <p>Your trusted learning partner</p>
             </div>
             <p>Powered by <strong>Library Connekto</strong></p>
             <p>Connecting students with knowledge</p>
             <div class="social-links">
-                <a href="#">📧</a>
-                <a href="#">📱</a>
-                <a href="#">🌐</a>
+                <a href="#"></a>
+                <a href="#"></a>
+                <a href="#"></a>
             </div>
             <p style="font-size: 12px; opacity: 0.8; margin-top: 20px;">
                 This is an automated message. Please do not reply to this email.
@@ -1132,7 +1132,7 @@ Powered by Library Connekto
     
     def send_booking_approval_email(self, email: str, student_name: str, library_name: str, booking_details: Dict[str, Any], payment_url: str = None) -> Dict[str, Any]:
         """Send booking approval email with payment instructions"""
-        subject = f"🎉 Your Seat Booking Request Has Been Approved - {library_name}"
+        subject = f" Your Seat Booking Request Has Been Approved - {library_name}"
         
         # Extract booking details
         amount = booking_details.get('amount', 0)
@@ -1156,20 +1156,20 @@ Powered by Library Connekto
         text_body = f"""
 Dear {student_name},
 
-🎉 GREAT NEWS! Your seat booking request has been APPROVED!
+ GREAT NEWS! Your seat booking request has been APPROVED!
 
 Your booking details:
 - Library: {library_name}
 - Subscription: {subscription_months} month{'s' if subscription_months > 1 else ''}
-- Amount: ₹{amount}
+- Amount: {amount}
 - Booking Date: {formatted_date}
 - Seat Number: {seat_number}
 
-💰 PAYMENT REQUIRED:
-To complete your booking, please make the payment of ₹{amount} as soon as possible.
+ PAYMENT REQUIRED:
+To complete your booking, please make the payment of {amount} as soon as possible.
 
 Payment Method:
-✅ Online Payment (Secure & Instant)
+ Online Payment (Secure & Instant)
 
 Complete your payment online to activate your subscription immediately.
 
@@ -1385,7 +1385,7 @@ Powered by Library Connekto
 <body>
     <div class="email-container">
         <div class="header">
-            <h1>🎉 Booking Approved!</h1>
+            <h1> Booking Approved!</h1>
             <p>Your seat booking request has been accepted</p>
         </div>
         
@@ -1395,11 +1395,11 @@ Powered by Library Connekto
             </div>
             
             <div class="approval-badge">
-                ✅ Your seat booking request has been APPROVED!
+                 Your seat booking request has been APPROVED!
             </div>
             
             <div class="booking-details">
-                <h3>📋 Your Booking Details</h3>
+                <h3> Your Booking Details</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Library</div>
@@ -1411,7 +1411,7 @@ Powered by Library Connekto
                     </div>
                     <div class="detail-item amount-highlight">
                         <div class="detail-label">Amount to Pay</div>
-                        <div class="detail-value">₹{amount}</div>
+                        <div class="detail-value">{amount}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Booking Date</div>
@@ -1423,19 +1423,19 @@ Powered by Library Connekto
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Status</div>
-                        <div class="detail-value" style="color: #28a745; font-weight: 600;">✅ Approved</div>
+                        <div class="detail-value" style="color: #28a745; font-weight: 600;"> Approved</div>
                     </div>
                 </div>
             </div>
             
             <div class="payment-section">
-                <h3>💰 Payment Required</h3>
-                <div class="payment-amount">₹{amount}</div>
+                <h3> Payment Required</h3>
+                <div class="payment-amount">{amount}</div>
                 <p>To complete your booking, please make the payment as soon as possible.</p>
                 
                 <div class="payment-methods">
                     <div class="payment-method">
-                        <span class="method-icon">💳</span>
+                        <span class="method-icon"></span>
                         <span class="method-text">Online Payment (Secure & Instant)</span>
                     </div>
                 </div>
@@ -1443,11 +1443,11 @@ Powered by Library Connekto
                     Complete your payment online to activate your subscription immediately.
                 </p>
                 
-                {f'<a href="{payment_url}" class="cta-button">💳 Make Payment Now</a>' if payment_url else ''}
+                {f'<a href="{payment_url}" class="cta-button"> Make Payment Now</a>' if payment_url else ''}
             </div>
             
             <div class="urgency-notice">
-                <strong>⏰ Important:</strong> Your seat will be reserved for 48 hours pending payment confirmation. Please complete the payment soon to secure your booking.
+                <strong> Important:</strong> Your seat will be reserved for 48 hours pending payment confirmation. Please complete the payment soon to secure your booking.
             </div>
             
             <p style="margin-top: 30px; font-size: 16px; color: #495057;">
@@ -1460,9 +1460,9 @@ Powered by Library Connekto
             <p>Powered by <strong>Library Connekto</strong></p>
             <p>Your trusted learning partner</p>
             <div class="social-links">
-                <a href="#">📧</a>
-                <a href="#">📱</a>
-                <a href="#">🌐</a>
+                <a href="#"></a>
+                <a href="#"></a>
+                <a href="#"></a>
             </div>
             <p style="font-size: 12px; opacity: 0.8; margin-top: 20px;">
                 This is an automated message. Please do not reply to this email.
@@ -1477,7 +1477,7 @@ Powered by Library Connekto
     
     def send_booking_payment_confirmation_email(self, email: str, student_name: str, library_name: str, booking_details: Dict[str, Any]) -> Dict[str, Any]:
         """Send booking payment confirmation email with welcome message"""
-        subject = f"🎉 Payment Confirmed - Welcome to {library_name}!"
+        subject = f" Payment Confirmed - Welcome to {library_name}!"
         
         # Extract booking details
         amount = booking_details.get('amount', 0)
@@ -1505,12 +1505,12 @@ Powered by Library Connekto
         text_body = f"""
 Dear {student_name},
 
-🎉 WELCOME TO {library_name.upper()}!
+ WELCOME TO {library_name.upper()}!
 
 Your payment has been successfully confirmed and your subscription is now ACTIVE!
 
 Payment Details:
-- Amount Paid: ₹{amount}
+- Amount Paid: {amount}
 - Payment Method: Online Payment (Secure & Instant)
 - Transaction Reference: {payment_reference}
 - Subscription Duration: {subscription_months} month{'s' if subscription_months > 1 else ''}
@@ -1518,13 +1518,13 @@ Payment Details:
 Your Subscription:
 - Start Date: {formatted_start}
 - End Date: {formatted_end}
-- Status: ✅ ACTIVE
+- Status:  ACTIVE
 
 You can now:
-✅ Access the library facilities
-✅ Use your assigned seat
-✅ Attend library sessions
-✅ Access online resources
+ Access the library facilities
+ Use your assigned seat
+ Attend library sessions
+ Access online resources
 
 Next Steps:
 1. Visit the library with a valid ID
@@ -1756,7 +1756,7 @@ Powered by Library Connekto
 <body>
     <div class="email-container">
         <div class="header">
-            <h1>🎉 Payment Confirmed!</h1>
+            <h1> Payment Confirmed!</h1>
             <p>Welcome to {library_name}</p>
         </div>
         
@@ -1766,15 +1766,15 @@ Powered by Library Connekto
             </div>
             
             <div class="welcome-badge">
-                🎉 WELCOME TO {library_name.upper()}!
+                 WELCOME TO {library_name.upper()}!
             </div>
             
             <div class="payment-details">
-                <h3>💳 Payment Details</h3>
+                <h3> Payment Details</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Amount Paid</div>
-                        <div class="detail-value">₹{amount}</div>
+                        <div class="detail-value">{amount}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Payment Method</div>
@@ -1792,7 +1792,7 @@ Powered by Library Connekto
             </div>
             
             <div class="subscription-section">
-                <h3>📅 Your Active Subscription</h3>
+                <h3> Your Active Subscription</h3>
                 <div class="subscription-dates">
                     <div class="date-item">
                         <div class="date-label">Start Date</div>
@@ -1803,23 +1803,23 @@ Powered by Library Connekto
                         <div class="date-value">{formatted_end}</div>
                     </div>
                 </div>
-                <p style="font-size: 18px; font-weight: 600; margin-top: 15px;">✅ Status: ACTIVE</p>
+                <p style="font-size: 18px; font-weight: 600; margin-top: 15px;"> Status: ACTIVE</p>
             </div>
             
             <div class="benefits-section">
-                <h3>🎯 What You Can Do Now</h3>
+                <h3> What You Can Do Now</h3>
                 <ul class="benefits-list">
-                    <li><span class="benefit-icon">✅</span>Access the library facilities</li>
-                    <li><span class="benefit-icon">🪑</span>Use your assigned seat</li>
-                    <li><span class="benefit-icon">📚</span>Attend library sessions</li>
-                    <li><span class="benefit-icon">💻</span>Access online resources</li>
-                    <li><span class="benefit-icon">📖</span>Borrow books and materials</li>
-                    <li><span class="benefit-icon">👥</span>Join study groups</li>
+                    <li><span class="benefit-icon"></span>Access the library facilities</li>
+                    <li><span class="benefit-icon"></span>Use your assigned seat</li>
+                    <li><span class="benefit-icon"></span>Attend library sessions</li>
+                    <li><span class="benefit-icon"></span>Access online resources</li>
+                    <li><span class="benefit-icon"></span>Borrow books and materials</li>
+                    <li><span class="benefit-icon"></span>Join study groups</li>
                 </ul>
             </div>
             
             <div class="next-steps">
-                <h3>📋 Next Steps</h3>
+                <h3> Next Steps</h3>
                 <ol class="steps-list">
                     <li>1. Visit the library with a valid ID</li>
                     <li>2. Complete your registration process</li>
@@ -1850,7 +1850,7 @@ Powered by Library Connekto
     
     def send_booking_submission_email(self, email: str, student_name: str, library_name: str, booking_details: Dict[str, Any]) -> Dict[str, Any]:
         """Send booking submission confirmation email to student"""
-        subject = f"📋 Seat Booking Request Submitted - {library_name}"
+        subject = f" Seat Booking Request Submitted - {library_name}"
         
         # Extract booking details
         amount = booking_details.get('amount', 0)
@@ -1872,14 +1872,14 @@ Powered by Library Connekto
         text_body = f"""
 Dear {student_name},
 
-📋 Your seat booking request has been successfully submitted!
+ Your seat booking request has been successfully submitted!
 
 Booking Details:
 - Library: {library_name}
 - Subscription Duration: {subscription_months} month{'s' if subscription_months > 1 else ''}
-- Amount: ₹{amount}
+- Amount: {amount}
 - Submission Date: {formatted_date}
-- Status: ⏳ Pending Review
+- Status:  Pending Review
 
 What happens next:
 1. Our admin team will review your request
@@ -2060,7 +2060,7 @@ Powered by Library Connekto
 <body>
     <div class="email-container">
         <div class="header">
-            <h1>📋 Request Submitted!</h1>
+            <h1> Request Submitted!</h1>
             <p>Your seat booking request is under review</p>
         </div>
         
@@ -2070,11 +2070,11 @@ Powered by Library Connekto
             </div>
             
             <div class="submission-badge">
-                📋 Your seat booking request has been successfully submitted!
+                 Your seat booking request has been successfully submitted!
             </div>
             
             <div class="booking-details">
-                <h3>📋 Booking Details</h3>
+                <h3> Booking Details</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Library</div>
@@ -2086,7 +2086,7 @@ Powered by Library Connekto
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Amount</div>
-                        <div class="detail-value">₹{amount}</div>
+                        <div class="detail-value">{amount}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Submission Date</div>
@@ -2096,11 +2096,11 @@ Powered by Library Connekto
             </div>
             
             <div class="status-badge">
-                ⏳ Status: Pending Review
+                 Status: Pending Review
             </div>
             
             <div class="next-steps">
-                <h3>📋 What happens next?</h3>
+                <h3> What happens next?</h3>
                 <ul class="steps-list">
                     <li>
                         <span class="step-number">1</span>
@@ -2147,7 +2147,7 @@ Powered by Library Connekto
     
     def send_booking_rejection_email(self, email: str, student_name: str, library_name: str, booking_details: Dict[str, Any], rejection_reason: str = None) -> Dict[str, Any]:
         """Send booking rejection email to student"""
-        subject = f"❌ Seat Booking Request Update - {library_name}"
+        subject = f" Seat Booking Request Update - {library_name}"
         
         # Extract booking details
         amount = booking_details.get('amount', 0)
@@ -2173,14 +2173,14 @@ Powered by Library Connekto
         text_body = f"""
 Dear {student_name},
 
-❌ Your seat booking request has been reviewed and we regret to inform you that it cannot be approved at this time.
+ Your seat booking request has been reviewed and we regret to inform you that it cannot be approved at this time.
 
 Booking Details:
 - Library: {library_name}
 - Subscription Duration: {subscription_months} month{'s' if subscription_months > 1 else ''}
-- Amount: ₹{amount}
+- Amount: {amount}
 - Booking Date: {formatted_date}
-- Status: ❌ Rejected
+- Status:  Rejected
 
 Reason: {rejection_reason}
 
@@ -2368,7 +2368,7 @@ Powered by Library Connekto
 <body>
     <div class="email-container">
         <div class="header">
-            <h1>❌ Request Update</h1>
+            <h1> Request Update</h1>
             <p>Your seat booking request has been reviewed</p>
         </div>
         
@@ -2378,11 +2378,11 @@ Powered by Library Connekto
             </div>
             
             <div class="rejection-badge">
-                ❌ Your seat booking request cannot be approved at this time
+                 Your seat booking request cannot be approved at this time
             </div>
             
             <div class="booking-details">
-                <h3>📋 Booking Details</h3>
+                <h3> Booking Details</h3>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <div class="detail-label">Library</div>
@@ -2394,7 +2394,7 @@ Powered by Library Connekto
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Amount</div>
-                        <div class="detail-value">₹{amount}</div>
+                        <div class="detail-value">{amount}</div>
                     </div>
                     <div class="detail-item">
                         <div class="detail-label">Booking Date</div>
@@ -2404,20 +2404,20 @@ Powered by Library Connekto
             </div>
             
             <div class="status-badge">
-                ❌ Status: Rejected
+                 Status: Rejected
             </div>
             
             <div class="reason-section">
-                <h3>📝 Reason</h3>
+                <h3> Reason</h3>
                 <p class="reason-text">{rejection_reason}</p>
             </div>
             
             <div class="alternatives">
-                <h3>💡 What you can do</h3>
+                <h3> What you can do</h3>
                 <ul class="alternatives-list">
-                    <li><span class="alternative-icon">🕒</span>Try booking for a different time period</li>
-                    <li><span class="alternative-icon">📞</span>Contact us for alternative arrangements</li>
-                    <li><span class="alternative-icon">🔄</span>Check back later for availability updates</li>
+                    <li><span class="alternative-icon"></span>Try booking for a different time period</li>
+                    <li><span class="alternative-icon"></span>Contact us for alternative arrangements</li>
+                    <li><span class="alternative-icon"></span>Check back later for availability updates</li>
                 </ul>
             </div>
             
