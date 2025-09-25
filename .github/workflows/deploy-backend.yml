@@ -47,47 +47,26 @@ jobs:
       - name: Create environment file
         run: |
           cat > env-vars.yaml << EOF
-          env:
-          - name: DATABASE_URL
-            value: "${{ secrets.DATABASE_URL }}"
-          - name: SECRET_KEY
-            value: "${{ secrets.SECRET_KEY }}"
-          - name: JWT_ALGORITHM
-            value: "${{ secrets.JWT_ALGORITHM }}"
-          - name: ACCESS_TOKEN_EXPIRE_MINUTES
-            value: "${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}"
-          - name: ALLOWED_ORIGINS
-            value: "${{ secrets.ALLOWED_ORIGINS }}"
-          - name: UPLOAD_DIR
-            value: "${{ secrets.UPLOAD_DIR }}"
-          - name: MAX_FILE_SIZE
-            value: "${{ secrets.MAX_FILE_SIZE }}"
-          - name: SMTP_HOST
-            value: "${{ secrets.SMTP_HOST }}"
-          - name: SMTP_PORT
-            value: "${{ secrets.SMTP_PORT }}"
-          - name: SMTP_USERNAME
-            value: "${{ secrets.SMTP_USERNAME }}"
-          - name: SMTP_PASSWORD
-            value: "${{ secrets.SMTP_PASSWORD }}"
-          - name: RAZORPAY_KEY_ID
-            value: "${{ secrets.RAZORPAY_KEY_ID }}"
-          - name: RAZORPAY_KEY_SECRET
-            value: "${{ secrets.RAZORPAY_KEY_SECRET }}"
-          - name: EMAIL_SCHEDULER_ENABLED
-            value: "${{ secrets.EMAIL_SCHEDULER_ENABLED }}"
-          - name: SCHEDULER_INITIAL_DELAY_SECONDS
-            value: "${{ secrets.SCHEDULER_INITIAL_DELAY_SECONDS }}"
-          - name: SCHEDULER_LOOP_INTERVAL_SECONDS
-            value: "${{ secrets.SCHEDULER_LOOP_INTERVAL_SECONDS }}"
-          - name: SUBSCRIPTION_CHECKS_DAILY_ENABLED
-            value: "${{ secrets.SUBSCRIPTION_CHECKS_DAILY_ENABLED }}"
-          - name: SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED
-            value: "${{ secrets.SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED }}"
-          - name: PYTHONDONTWRITEBYTECODE
-            value: "1"
-          - name: PYTHONUNBUFFERED
-            value: "1"
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          SECRET_KEY=${{ secrets.SECRET_KEY }}
+          JWT_ALGORITHM=${{ secrets.JWT_ALGORITHM }}
+          ACCESS_TOKEN_EXPIRE_MINUTES=${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
+          ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }}
+          UPLOAD_DIR=${{ secrets.UPLOAD_DIR }}
+          MAX_FILE_SIZE=${{ secrets.MAX_FILE_SIZE }}
+          SMTP_HOST=${{ secrets.SMTP_HOST }}
+          SMTP_PORT=${{ secrets.SMTP_PORT }}
+          SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}
+          RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}
+          RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}
+          EMAIL_SCHEDULER_ENABLED=${{ secrets.EMAIL_SCHEDULER_ENABLED }}
+          SCHEDULER_INITIAL_DELAY_SECONDS=${{ secrets.SCHEDULER_INITIAL_DELAY_SECONDS }}
+          SCHEDULER_LOOP_INTERVAL_SECONDS=${{ secrets.SCHEDULER_LOOP_INTERVAL_SECONDS }}
+          SUBSCRIPTION_CHECKS_DAILY_ENABLED=${{ secrets.SUBSCRIPTION_CHECKS_DAILY_ENABLED }}
+          SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED=${{ secrets.SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED }}
+          PYTHONDONTWRITEBYTECODE=1
+          PYTHONUNBUFFERED=1
           EOF
 
       - name: Deploy to Cloud Run
