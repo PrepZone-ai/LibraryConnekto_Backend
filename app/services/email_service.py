@@ -637,12 +637,15 @@ Happy learning!
         """
 
         # HTML version with branding
+        cta_html = f'<p><a href="{invite_url}" class="cta">Join now</a></p>' if invite_url else ''
+        brand_text = f"{library_name} • " if library_name else ""
+        
         html_body = f"""
 <!DOCTYPE html>
-<html lang=\"en\">
+<html lang="en">
 <head>
-  <meta charset=\"UTF-8\" />
-  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>You're invited to {library_name or 'Library Connekto'}</title>
   <style>
     body {{ background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; margin:0; padding:24px; }}
@@ -655,13 +658,13 @@ Happy learning!
   </style>
   </head>
   <body>
-    <div class=\"card\">
+    <div class="card">
       <h1>You're invited to {library_name or 'Library Connekto'}</h1>
-      <p><strong style=\"color:#fff\">{referrer_name}</strong> thinks you'll love our study community.</p>
+      <p><strong style="color:#fff">{referrer_name}</strong> thinks you'll love our study community.</p>
       <p>Use this referral code during sign-up:</p>
-      <p class=\"code\">{referral_code}</p>
-      {('<p><a href=\"' + invite_url + '\" class=\"cta\">Join now</a></p>') if invite_url else ''}
-      <p class=\"brand\">{(library_name + '  ') if library_name else ''}Powered by Library Connekto</p>
+      <p class="code">{referral_code}</p>
+      {cta_html}
+      <p class="brand">{brand_text}Powered by Library Connekto</p>
     </div>
   </body>
 </html>
