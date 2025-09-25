@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 sqlalchemy
+sqlalchemy-utils
 psycopg2-binary
 alembic
 python-jose[cryptography]
