@@ -44,6 +44,52 @@ jobs:
       - name: Push image to Artifact Registry
         run: docker push "$IMAGE"
 
+      - name: Create environment file
+        run: |
+          cat > env-vars.yaml << EOF
+          env:
+          - name: DATABASE_URL
+            value: "${{ secrets.DATABASE_URL }}"
+          - name: SECRET_KEY
+            value: "${{ secrets.SECRET_KEY }}"
+          - name: JWT_ALGORITHM
+            value: "${{ secrets.JWT_ALGORITHM }}"
+          - name: ACCESS_TOKEN_EXPIRE_MINUTES
+            value: "${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}"
+          - name: ALLOWED_ORIGINS
+            value: "${{ secrets.ALLOWED_ORIGINS }}"
+          - name: UPLOAD_DIR
+            value: "${{ secrets.UPLOAD_DIR }}"
+          - name: MAX_FILE_SIZE
+            value: "${{ secrets.MAX_FILE_SIZE }}"
+          - name: SMTP_HOST
+            value: "${{ secrets.SMTP_HOST }}"
+          - name: SMTP_PORT
+            value: "${{ secrets.SMTP_PORT }}"
+          - name: SMTP_USERNAME
+            value: "${{ secrets.SMTP_USERNAME }}"
+          - name: SMTP_PASSWORD
+            value: "${{ secrets.SMTP_PASSWORD }}"
+          - name: RAZORPAY_KEY_ID
+            value: "${{ secrets.RAZORPAY_KEY_ID }}"
+          - name: RAZORPAY_KEY_SECRET
+            value: "${{ secrets.RAZORPAY_KEY_SECRET }}"
+          - name: EMAIL_SCHEDULER_ENABLED
+            value: "${{ secrets.EMAIL_SCHEDULER_ENABLED }}"
+          - name: SCHEDULER_INITIAL_DELAY_SECONDS
+            value: "${{ secrets.SCHEDULER_INITIAL_DELAY_SECONDS }}"
+          - name: SCHEDULER_LOOP_INTERVAL_SECONDS
+            value: "${{ secrets.SCHEDULER_LOOP_INTERVAL_SECONDS }}"
+          - name: SUBSCRIPTION_CHECKS_DAILY_ENABLED
+            value: "${{ secrets.SUBSCRIPTION_CHECKS_DAILY_ENABLED }}"
+          - name: SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED
+            value: "${{ secrets.SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED }}"
+          - name: PYTHONDONTWRITEBYTECODE
+            value: "1"
+          - name: PYTHONUNBUFFERED
+            value: "1"
+          EOF
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run deploy "$SERVICE" \
@@ -60,26 +106,7 @@ jobs:
             --concurrency=80 \
             --service-account=backend-runtime@kabaddiguru.iam.gserviceaccount.com \
             --add-cloudsql-instances="kabaddiguru:us-central1:lb4321" \
-            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }}" \
-            --set-env-vars="SECRET_KEY=${{ secrets.SECRET_KEY }}" \
-            --set-env-vars="JWT_ALGORITHM=${{ secrets.JWT_ALGORITHM }}" \
-            --set-env-vars="ACCESS_TOKEN_EXPIRE_MINUTES=${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}" \
-            --set-env-vars="ALLOWED_ORIGINS=${{ secrets.ALLOWED_ORIGINS }}" \
-            --set-env-vars="UPLOAD_DIR=${{ secrets.UPLOAD_DIR }}" \
-            --set-env-vars="MAX_FILE_SIZE=${{ secrets.MAX_FILE_SIZE }}" \
-            --set-env-vars="SMTP_HOST=${{ secrets.SMTP_HOST }}" \
-            --set-env-vars="SMTP_PORT=${{ secrets.SMTP_PORT }}" \
-            --set-env-vars="SMTP_USERNAME=${{ secrets.SMTP_USERNAME }}" \
-            --set-env-vars="SMTP_PASSWORD=${{ secrets.SMTP_PASSWORD }}" \
-            --set-env-vars="RAZORPAY_KEY_ID=${{ secrets.RAZORPAY_KEY_ID }}" \
-            --set-env-vars="RAZORPAY_KEY_SECRET=${{ secrets.RAZORPAY_KEY_SECRET }}" \
-            --set-env-vars="EMAIL_SCHEDULER_ENABLED=${{ secrets.EMAIL_SCHEDULER_ENABLED }}" \
-            --set-env-vars="SCHEDULER_INITIAL_DELAY_SECONDS=${{ secrets.SCHEDULER_INITIAL_DELAY_SECONDS }}" \
-            --set-env-vars="SCHEDULER_LOOP_INTERVAL_SECONDS=${{ secrets.SCHEDULER_LOOP_INTERVAL_SECONDS }}" \
-            --set-env-vars="SUBSCRIPTION_CHECKS_DAILY_ENABLED=${{ secrets.SUBSCRIPTION_CHECKS_DAILY_ENABLED }}" \
-            --set-env-vars="SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED=${{ secrets.SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED }}" \
-            --set-env-vars="PYTHONDONTWRITEBYTECODE=1" \
-            --set-env-vars="PYTHONUNBUFFERED=1"
+            --env-vars-file=env-vars.yaml
 
       - name: Get service URL
         run: |
