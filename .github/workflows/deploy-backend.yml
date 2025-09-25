@@ -85,13 +85,7 @@ jobs:
             --concurrency=80 \
             --service-account=backend-runtime@kabaddiguru.iam.gserviceaccount.com \
             --add-cloudsql-instances="kabaddiguru:us-central1:lb4321" \
-            --env-vars-file=env-vars.yaml \
-            --container-name="api-1" \
-            --startup-probe-path="/health" \
-            --startup-probe-initial-delay-seconds=30 \
-            --startup-probe-timeout-seconds=10 \
-            --startup-probe-period-seconds=5 \
-            --startup-probe-failure-threshold=6
+            --env-vars-file=env-vars.yaml
 
       - name: Get service URL
         run: |
