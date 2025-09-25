@@ -81,11 +81,17 @@ jobs:
             --memory=2Gi \
             --min-instances=0 \
             --max-instances=10 \
-            --timeout=300 \
+            --timeout=900 \
             --concurrency=80 \
             --service-account=backend-runtime@kabaddiguru.iam.gserviceaccount.com \
             --add-cloudsql-instances="kabaddiguru:us-central1:lb4321" \
-            --env-vars-file=env-vars.yaml
+            --env-vars-file=env-vars.yaml \
+            --container-name="api-1" \
+            --startup-probe-path="/health" \
+            --startup-probe-initial-delay-seconds=30 \
+            --startup-probe-timeout-seconds=10 \
+            --startup-probe-period-seconds=5 \
+            --startup-probe-failure-threshold=6
 
       - name: Get service URL
         run: |
@@ -93,8 +99,19 @@ jobs:
           echo "Service deployed at: $URL"
           echo "SERVICE_URL=$URL" >> $GITHUB_ENV
 
+      - name: Check deployment logs
+        run: |
+          echo "Checking deployment logs..."
+          gcloud run services describe "$SERVICE" --region "${{ env.REGION }}" --format="value(status.latestReadyRevisionName)" || echo "No ready revision found"
+          
       - name: Test deployment
         run: |
-          sleep 30
-          curl -f "${{ env.SERVICE_URL }}/health" || exit 1
+          echo "Waiting for service to be ready..."
+          sleep 60
+          echo "Testing health endpoint..."
+          curl -f "${{ env.SERVICE_URL }}/health" || {
+            echo "Health check failed, checking logs..."
+            gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=$SERVICE" --limit=50 --format="value(textPayload)" --project=kabaddiguru
+            exit 1
+          }
           echo "Deployment test successful!"
