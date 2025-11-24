@@ -1,69 +1,123 @@
-# 📚 LibraryConnekto Backend
+📚 LibraryConnekto Backend
 
-LibraryConnekto Backend is a production-ready server built using **FastAPI**, **PostgreSQL**, **SQLAlchemy**, and **Alembic**, designed to support a smart library management and student workspace system.  
-It provides secure authentication, student/admin workflows, notifications, seat booking, subscriptions, and more.
+LibraryConnekto Backend is a production-ready backend system designed to power a smart library and student-workspace management platform.
+It provides robust APIs for authentication, student management, admin operations, attendance tracking, seat booking, referrals, payments, notifications, and more.
 
----
+Built with FastAPI, PostgreSQL, SQLAlchemy, Alembic, and fully deployable on Google Cloud Run.
 
-## 🚀 Features
+🚀 Features
+🔐 Authentication
 
-- 🔐 **JWT Authentication** (Admin & Student)  
-- 🪑 **Seat Booking System**  
-- 👨‍🎓 **Student Management APIs**  
-- 🧑‍💼 **Admin Management APIs**  
-- 📨 **Notification & Messaging System**  
-- 💳 **Payment Integration (Razorpay)**  
-- 📂 **File Upload Support**  
-- 🕒 **Background Scheduler for Subscription Checks**  
-- 🐳 **Docker & Cloud Run Deployment Ready**
+JWT-based secure authentication
 
----
+Role-based access: Admin and Student
 
-## 🧱 Project Structure
+Password hashing (bcrypt)
 
+👨‍🎓 Student & Admin Operations
+
+Student profile CRUD
+
+Admin dashboard endpoints
+
+Attendance management
+
+Task & exam record management
+
+Messaging system
+
+🪑 Seat Booking System
+
+Anonymous + authenticated seat booking
+
+Session-based seat tracking
+
+🎁 Referral & Offers
+
+Referral-code generation
+
+Referral validation
+
+Bonus & discount logic
+
+💳 Payments
+
+Razorpay integration
+
+Subscription tracking
+
+Automated payment validation
+
+📨 Notifications
+
+Email notifications (SMTP)
+
+Scheduled background jobs
+
+Daily subscription checks
+
+Automated reminders
+
+🗄️ Database & Deployment
+
+SQLAlchemy ORM (sync)
+
+Alembic migrations
+
+Docker + Cloud Run deployment scripts
+
+Environment-based configuration
+
+🛠️ Tech Stack
+Category	Tools / Libraries
+Framework	FastAPI
+ORM / DB	SQLAlchemy, PostgreSQL
+Migrations	Alembic
+Auth	Python-Jose, Passlib
+Payments	Razorpay
+Email	SMTP
+Deployment	Docker, Google Cloud Run
+Background Jobs	In-app scheduler
+📁 Project Structure
 Backend/
-├── main.py
-├── requirements.txt
-├── alembic.ini
-├── alembic/
+├── main.py                  # FastAPI entrypoint
 ├── app/
-│ ├── api/
-│ ├── auth/
-│ ├── core/
-│ ├── database.py
-│ ├── models/
-│ ├── schemas/
-│ └── services/
-├── uploads/
+│   ├── api/                 # API routes
+│   ├── auth/                # JWT utilities
+│   ├── core/                # Configuration & settings
+│   ├── models/              # SQLAlchemy models
+│   ├── schemas/             # Pydantic schemas
+│   ├── services/            # Mail, payments, notifications
+│   └── database.py          # DB session & engine
+├── alembic/                 # Migration repository
+├── alembic.ini
+├── requirements.txt
 ├── Dockerfile
 ├── entrypoint.sh
 ├── deploy-cloudrun.sh
 ├── deploy-cloudrun.ps1
 ├── cloudbuild.yaml
 ├── environment.template
-└── local.env.template
+└── uploads/                 # File uploads (ignored)
 
-yaml
-Copy code
-
----
-
-## ⚙️ Setup (Local Development)
-
-### 1️⃣ Clone Repository
-```bash
-git clone https://github.com/PrepZone-ai/LibraryConnekto_Backend.git
+⚙️ Local Setup
+1️⃣ Clone the repository
+git clone https://github.com/PrepZone-ai/LibraryConnekto_Backend
 cd LibraryConnekto_Backend
-2️⃣ Install Dependencies
-bash
-Copy code
-pip install -r requirements.txt
-3️⃣ Create Environment File
-Rename environment.template → .env and fill in:
 
-env
-Copy code
-DATABASE_URL=postgresql://USER:PASSWORD@localhost:5432/DB_NAME
+2️⃣ Create virtual environment
+python -m venv venv
+source venv/bin/activate     # Linux/Mac
+venv\Scripts\activate        # Windows
+
+3️⃣ Install dependencies
+pip install -r requirements.txt
+
+4️⃣ Setup environment variables
+
+Create .env file:
+
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
 
 SECRET_KEY=your-secret-key
 JWT_ALGORITHM=HS256
@@ -86,80 +140,78 @@ EMAIL_SCHEDULER_ENABLED=true
 SCHEDULER_INITIAL_DELAY_SECONDS=60
 SCHEDULER_LOOP_INTERVAL_SECONDS=60
 SUBSCRIPTION_CHECKS_DAILY_ENABLED=true
-4️⃣ Run Database Migrations
-bash
-Copy code
-alembic upgrade head
-5️⃣ Start Server
-bash
-Copy code
-uvicorn main:app --reload
-📌 Docs: http://localhost:8000/docs
-📌 Health Check: http://localhost:8000/health
+SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED=false
 
-🐳 Run with Docker
-Build Image
-bash
-Copy code
+5️⃣ Run database migrations
+alembic upgrade head
+
+6️⃣ Start the server
+uvicorn main:app --reload
+
+
+API will run at:
+👉 http://localhost:8000
+
+👉 Swagger docs: http://localhost:8000/docs
+
+🐳 Docker Setup
+Build the image
 docker build -t libraryconnekto-backend .
-Run Container
-bash
-Copy code
-docker run -p 8080:8080 \
-  -e DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DB" \
-  -e SECRET_KEY="your-secret" \
-  libraryconnekto-backend
-API Docs → http://localhost:8080/docs
-Health → http://localhost:8080/health
+
+Run container
+docker run -p 8080:8080 --env-file .env libraryconnekto-backend
+
+
+Then open:
+
+API: http://localhost:8080
+
+Docs: http://localhost:8080/docs
 
 ☁️ Deploy to Google Cloud Run
-Option A: Linux/macOS
-bash
-Copy code
+Requirements
+
+✔ Google Cloud CLI
+✔ Billing Enabled
+✔ Cloud Build enabled
+✔ Artifact Registry enabled
+
+Deploy using script
 ./deploy-cloudrun.sh
-Option B: Windows PowerShell
-powershell
-Copy code
+
+Deploy using PowerShell (Windows)
 .\deploy-cloudrun.ps1 -ProjectId <PROJECT_ID> -Region <REGION> -Service <SERVICE_NAME>
-Option C: Cloud Build
-bash
-Copy code
-gcloud builds submit --config cloudbuild.yaml
+
+Deploy manually
+gcloud builds submit --tag gcr.io/PROJECT_ID/libraryconnekto
+gcloud run deploy libraryconnekto \
+  --image gcr.io/PROJECT_ID/libraryconnekto \
+  --region REGION \
+  --platform managed \
+  --allow-unauthenticated
+
 🔧 Common Developer Commands
-Create Migration
-bash
-Copy code
+Create migration
 alembic revision --autogenerate -m "message"
-Apply Migration
-bash
-Copy code
+
+Apply migrations
 alembic upgrade head
-Run Tests
-bash
-Copy code
+
+Run tests (if added)
 pytest
+
 🔐 Security Notes
-Never commit .env files or secrets
 
-Use Google Secret Manager or environment variables for production
+Never commit .env files
 
-Rotate JWT keys regularly
+Use Google Secret Manager for production keys
 
-🧩 Contribution Guidelines
-Fork the repo
+Always rotate API keys periodically
 
-Create a new branch:
+Use HTTPS in all deployments
 
-bash
-Copy code
-git checkout -b feature/my-feature
-Commit changes
 
-Push the branch and open a Pull Request
+❤️ Acknowledgments
 
-📄 License
-Add your license file (MIT recommended) or update this section.
-
-✨ About
-LibraryConnekto Backend powers the entire ecosystem of student management, seat booking, notifications, and admin workflows.
-Clean architecture, fully modular, and optimized for scale.
+Thanks to all the contributors who helped build LibraryConnekto Backend.
+This system is designed to make libraries smarter, faster, and automated for students.
