@@ -1,0 +1,27 @@
+[Unit]
+Description=LibraryConnekto Celery Worker
+After=network.target redis-server.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/backend
+Environment="PATH=/home/ubuntu/backend/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/home/ubuntu/backend/.env
+ExecStart=/home/ubuntu/backend/venv/bin/celery \
+    -A app.celery_app:celery_app \
+    worker \
+    --loglevel=info \
+    --concurrency=2 \
+    --max-tasks-per-child=1000 \
+    --logfile=/home/ubuntu/logs/celery-worker.log
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=libraryconnekto-celery
+
+[Install]
+WantedBy=multi-user.target

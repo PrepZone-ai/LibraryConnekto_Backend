@@ -1,114 +1,80 @@
-name: Deploy LibraryConnekto Backend to Google Cloud Run
+name: Deploy Backend to AWS EC2
 
 on:
   push:
-    branches: [ "main", "master" ]
-    paths:
-      - '**'
+    branches: [main, master]
+    paths-ignore:
+      - "**.md"
+      - "deploy/aws/**.md"
   workflow_dispatch:
 
-env:
-  PROJECT_ID: kabaddiguru
-  REGION: us-central1
-  SERVICE: libraryconnekto-api
-  REPO: libraryconnekto-backend
-  IMAGE: us-central1-docker.pkg.dev/kabaddiguru/libraryconnekto-backend/libraryconnekto-api:${{ github.sha }}
+concurrency:
+  group: deploy-backend-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
-
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker for Artifact Registry
-        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
-
-      - name: Build Docker image
+      - name: Checkout code
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          docker build \
-            --build-arg PORT=8080 \
-            --build-arg UVICORN_WORKERS=2 \
-            --build-arg UVICORN_LOG_LEVEL=info \
-            -t "$IMAGE" .
+          git init .
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --depth=1 origin "${GITHUB_SHA}"
+          git checkout --detach FETCH_HEAD
 
-      - name: Push image to Artifact Registry
-        run: docker push "$IMAGE"
-
-      - name: Create environment file
+      - name: Deploy to EC2 via SSH
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          DEPLOY_BRANCH: ${{ github.ref_name }}
         run: |
-          cat > env-vars.yaml << EOF
-          DATABASE_URL: "${{ secrets.DATABASE_URL }}"
-          SECRET_KEY: "${{ secrets.SECRET_KEY }}"
-          JWT_ALGORITHM: "${{ secrets.JWT_ALGORITHM }}"
-          ACCESS_TOKEN_EXPIRE_MINUTES: "${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}"
-          ALLOWED_ORIGINS: "${{ secrets.ALLOWED_ORIGINS }}"
-          UPLOAD_DIR: "${{ secrets.UPLOAD_DIR }}"
-          MAX_FILE_SIZE: "${{ secrets.MAX_FILE_SIZE }}"
-          SMTP_HOST: "${{ secrets.SMTP_HOST }}"
-          SMTP_PORT: "${{ secrets.SMTP_PORT }}"
-          SMTP_USERNAME: "${{ secrets.SMTP_USERNAME }}"
-          SMTP_PASSWORD: "${{ secrets.SMTP_PASSWORD }}"
-          RAZORPAY_KEY_ID: "${{ secrets.RAZORPAY_KEY_ID }}"
-          RAZORPAY_KEY_SECRET: "${{ secrets.RAZORPAY_KEY_SECRET }}"
-          EMAIL_SCHEDULER_ENABLED: "${{ secrets.EMAIL_SCHEDULER_ENABLED }}"
-          SCHEDULER_INITIAL_DELAY_SECONDS: "${{ secrets.SCHEDULER_INITIAL_DELAY_SECONDS }}"
-          SCHEDULER_LOOP_INTERVAL_SECONDS: "${{ secrets.SCHEDULER_LOOP_INTERVAL_SECONDS }}"
-          SUBSCRIPTION_CHECKS_DAILY_ENABLED: "${{ secrets.SUBSCRIPTION_CHECKS_DAILY_ENABLED }}"
-          SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED: "${{ secrets.SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED }}"
-          PYTHONDONTWRITEBYTECODE: "1"
-          PYTHONUNBUFFERED: "1"
-          REDIS_HOST: "${{ secrets.REDIS_HOST }}"
-          REDIS_PORT: "${{ secrets.REDIS_PORT }}"
-          REDIS_PASSWORD: "${{ secrets.REDIS_PASSWORD }}"
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s\n' "${EC2_SSH_KEY}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          BRANCH="${DEPLOY_BRANCH:-main}"
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=300 ubuntu@"${EC2_HOST}" "bash -s" <<EOF
+          set -euo pipefail
+          echo "=== Pulling latest code ==="
+          cd /home/ubuntu/backend
+          git fetch --all
+          git reset --hard origin/${BRANCH}
+
+          echo "=== Installing Python dependencies ==="
+          source venv/bin/activate
+          pip install --upgrade pip --quiet
+          pip install -r requirements.txt --quiet
+
+          echo "=== Reinstalling systemd unit files (in case they changed) ==="
+          sudo install -m 0644 deploy/aws/systemd/libraryconnekto-api.service    /etc/systemd/system/libraryconnekto-api.service
+          sudo install -m 0644 deploy/aws/systemd/libraryconnekto-celery.service /etc/systemd/system/libraryconnekto-celery.service
+          sudo install -m 0644 deploy/aws/systemd/libraryconnekto-beat.service   /etc/systemd/system/libraryconnekto-beat.service
+          sudo install -m 0644 deploy/aws/nginx/libraryconnekto.conf            /etc/nginx/sites-available/libraryconnekto
+          sudo systemctl daemon-reload
+          sudo nginx -t
+
+          echo "=== Running database migrations ==="
+          alembic upgrade head
+
+          echo "=== Restarting services ==="
+          sudo systemctl restart libraryconnekto-api
+          sudo systemctl restart libraryconnekto-celery
+          sudo systemctl restart libraryconnekto-beat
+          sudo systemctl reload nginx
+
+          echo "=== Health check ==="
+          sleep 5
+          curl --fail --silent --show-error http://127.0.0.1:8000/health
+          echo
+          echo "=== Deploy complete ==="
           EOF
 
-      - name: Deploy to Cloud Run
-        run: |
-          gcloud run deploy "$SERVICE" \
-            --image="$IMAGE" \
-            --region="${{ env.REGION }}" \
-            --platform=managed \
-            --allow-unauthenticated \
-            --port=8080 \
-            --cpu=2 \
-            --memory=2Gi \
-            --min-instances=0 \
-            --max-instances=10 \
-            --timeout=900 \
-            --concurrency=80 \
-            --service-account=backend-runtime@kabaddiguru.iam.gserviceaccount.com \
-            --add-cloudsql-instances="kabaddiguru:us-central1:lb4321" \
-            --env-vars-file=env-vars.yaml
-
-      - name: Get service URL
-        run: |
-          URL=$(gcloud run services describe "$SERVICE" --region "${{ env.REGION }}" --format 'value(status.url)')
-          echo "Service deployed at: $URL"
-          echo "SERVICE_URL=$URL" >> $GITHUB_ENV
-
-      - name: Check deployment logs
-        run: |
-          echo "Checking deployment logs..."
-          gcloud run services describe "$SERVICE" --region "${{ env.REGION }}" --format="value(status.latestReadyRevisionName)" || echo "No ready revision found"
-          
-      - name: Test deployment
-        run: |
-          echo "Waiting for service to be ready..."
-          sleep 60
-          echo "Testing health endpoint..."
-          curl -f "${{ env.SERVICE_URL }}/health" || {
-            echo "Health check failed, checking logs..."
-            gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=$SERVICE" --limit=50 --format="value(textPayload)" --project=kabaddiguru
-            exit 1
-          }
-          echo "Deployment test successful!"
+      - name: Notify on failure
+        if: failure()
+        run: echo "::error::Backend deployment failed - check the SSH job logs above."

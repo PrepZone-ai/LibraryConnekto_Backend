@@ -1,0 +1,26 @@
+[Unit]
+Description=LibraryConnekto Celery Beat Scheduler
+After=network.target redis-server.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/backend
+Environment="PATH=/home/ubuntu/backend/venv/bin:/usr/local/bin:/usr/bin:/bin"
+EnvironmentFile=/home/ubuntu/backend/.env
+ExecStart=/home/ubuntu/backend/venv/bin/celery \
+    -A app.celery_app:celery_app \
+    beat \
+    --loglevel=info \
+    --logfile=/home/ubuntu/logs/celery-beat.log \
+    --schedule=/home/ubuntu/logs/celerybeat-schedule
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=libraryconnekto-beat
+
+[Install]
+WantedBy=multi-user.target

@@ -24,7 +24,8 @@
 | **ORM** | SQLAlchemy |
 | **Migrations** | Alembic |
 | **Payments** | Razorpay |
-| **Deployment** | Docker, Google Cloud Run |
+| **Deployment** | AWS EC2 + Nginx + systemd, RDS PostgreSQL, local Redis, S3 + CloudFront for the frontend |
+| **CI/CD** | GitHub Actions (`.github/workflows/deploy-backend.yml`) |
 | **Authentication** | Python-Jose, Passlib |
 
 ## Project Structure
@@ -47,11 +48,14 @@ LibraryConnekto_Backend/
 ├── alembic/                # Migration scripts
 ├── alembic.ini
 ├── requirements.txt
-├── Dockerfile
-├── entrypoint.sh
-├── deploy-cloudrun.sh
-├── deploy-cloudrun.ps1
-├── cloudbuild.yaml
+├── Dockerfile              # Optional - container image (not used by the AWS path)
+├── entrypoint.sh           # Used inside Docker / when running via container
+├── test_db_connection.py   # DB-readiness probe consumed by entrypoint.sh
+├── deploy/aws/             # AWS deployment kit (systemd, nginx, scripts)
+│   ├── systemd/            # FastAPI / Celery worker / Celery beat unit files
+│   ├── nginx/              # Reverse-proxy config for api.<domain>
+│   └── scripts/            # 01-provision-aws.ps1 + ec2-bootstrap.sh
+├── deploy/_archive_gcp/    # Old Cloud Run files (kept for reference only)
 └── uploads/                # Static uploads (ignored by Git)
 ```
 
@@ -112,16 +116,37 @@ docker build -t libraryconnekto-backend .
 docker run -p 8080:8080 --env-file .env libraryconnekto-backend
 ```
 
-## Deploy to Google Cloud Run
+## Deploy to AWS
 
-Linux/Mac:
+**Account reference:** [deploy/aws/AWS_ACCOUNT.md](deploy/aws/AWS_ACCOUNT.md) (ID `836809166355`, region `ap-south-1`).
 
-```bash
-./deploy-cloudrun.sh
-```
+The full step-by-step guide lives in [`../AWS_Deploy.md`](../AWS_Deploy.md).
+It deploys this backend to AWS EC2 (Mumbai region `ap-south-1`) with RDS
+PostgreSQL, local Redis on the instance, Celery worker + beat, Nginx + Let's
+Encrypt SSL, and the React frontend on S3 + CloudFront + Route 53.
 
-Windows:
+Two scripts automate the bulk of the work:
 
 ```powershell
-.\deploy-cloudrun.ps1 -ProjectId <ID> -Region <REGION> -Service <NAME>
+# 1. From your Windows machine — provisions all AWS resources.
+cd LibraryConnekto_Backend\deploy\aws\scripts
+$pw = Read-Host "RDS password" -AsSecureString
+.\01-provision-aws.ps1 -Region ap-south-1 -Domain libraryconnekto.me -DbPassword $pw -InstanceType t3.micro
 ```
+
+```bash
+# 2. SSH into the new EC2 instance, then bootstrap the application stack.
+ssh -i libraryconnekto-key.pem ubuntu@<elastic-ip>
+curl -fsSL https://raw.githubusercontent.com/PrepZone-ai/LibraryConnekto_Backend/main/deploy/aws/scripts/ec2-bootstrap.sh -o bootstrap.sh
+chmod +x bootstrap.sh
+./bootstrap.sh
+```
+
+CI/CD: pushes to `main` automatically deploy via
+`.github/workflows/deploy-backend.yml` (SSH into EC2, pull, restart services).
+Required GitHub repository secrets:
+
+| Secret | Description |
+| --- | --- |
+| `EC2_HOST` | Elastic IP of the EC2 instance |
+| `EC2_SSH_KEY` | Contents of `libraryconnekto-key.pem` |
