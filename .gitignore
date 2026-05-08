@@ -4,6 +4,20 @@
 .env.*.local
 *.env
 cloud.env
+.env.*
+.secrets
+.secrets.*
+secrets.*
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.enc
 
 # Python
 __pycache__/
