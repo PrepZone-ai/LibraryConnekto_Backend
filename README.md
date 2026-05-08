@@ -1,8 +1,8 @@
-# 📚 LibraryConnekto Backend
+# LibraryConnekto Backend
 
 **LibraryConnekto Backend** powers the Library Connekto platform with authentication, student/admin management, seat booking, payments, notifications, and automation.
 
-## 🚀 Features
+## Features
 
 *   **Authentication:** JWT for Admin + Student
 *   **Student Management:** Profiles, attendance, tasks, exams
@@ -15,7 +15,7 @@
 *   **Tech:** PostgreSQL + SQLAlchemy + Alembic
 *   **DevOps:** Docker + Cloud Run deployment
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Category | Tools |
 | :--- | :--- |
@@ -27,7 +27,7 @@
 | **Deployment** | Docker, Google Cloud Run |
 | **Authentication** | Python-Jose, Passlib |
 
-## 📁 Project Structure
+## Project Structure
 
 ```text
 LibraryConnekto_Backend/
@@ -55,7 +55,7 @@ LibraryConnekto_Backend/
 └── uploads/                # Static uploads (ignored by Git)
 ```
 
-## ⚙️ Setup Instructions
+## Setup Instructions
 
 ### 1) Install dependencies
 
@@ -105,14 +105,14 @@ API Docs: http://localhost:8000/docs
 
 Health Check: http://localhost:8000/health
 
-## 🐳 Docker (Optional)
+## Docker (Optional)
 
 ```bash
 docker build -t libraryconnekto-backend .
 docker run -p 8080:8080 --env-file .env libraryconnekto-backend
 ```
 
-## ☁️ Deploy to Google Cloud Run
+## Deploy to Google Cloud Run
 
 Linux/Mac:
 
