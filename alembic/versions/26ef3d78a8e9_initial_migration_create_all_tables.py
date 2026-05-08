@@ -33,7 +33,6 @@ def upgrade() -> None:
     op.create_index(op.f('ix_admin_users_email'), 'admin_users', ['email'], unique=True)
     op.create_table('subscription_plans',
     sa.Column('id', sa.UUID(), nullable=False),
-    sa.Column('library_id', sa.UUID(), sa.ForeignKey('admin_details.id'), nullable=False),
     sa.Column('name', sa.String(), nullable=False),
     sa.Column('duration_months', sa.Integer(), nullable=False),
     sa.Column('price', sa.Numeric(precision=10, scale=2), nullable=False),
