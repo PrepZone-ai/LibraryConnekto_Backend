@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.api.api_v1.endpoints import auth, admin, student, booking, messaging, referral, subscription, notifications, subscription_management, payments, student_removal
+from app.api.api_v1.endpoints import auth, admin, student, booking, messaging, referral, subscription, notifications, subscription_management, payments, student_removal, webhooks
 
 api_router = APIRouter()
 
@@ -21,3 +21,4 @@ api_router.include_router(payments.router, prefix="/payment", tags=["payments"])
 api_router.include_router(student_removal.router, prefix="/student-removal", tags=["student-removal"])
 api_router.include_router(referral.router, prefix="/referral", tags=["referral"])
 api_router.include_router(subscription.router, prefix="/subscription", tags=["subscription"])
+api_router.include_router(webhooks.router, prefix="/webhooks", tags=["webhooks"])

@@ -13,8 +13,32 @@ from app.models.booking import SeatBooking
 from app.models.admin import AdminUser, AdminDetails
 from app.models.student import Student
 from app.models.subscription import SubscriptionPlan
+from app.core.cache import get_cached, set_cached, library_occupied_key, invalidate_library_capacity, invalidate_admin_caches
+from app.utils.subscription_plan_scope import apply_plan_shift_filters
+from app.utils.razorpay_route import order_transfers_to_library
+from app.services.email_queue_service import enqueue_email_job
 
 router = APIRouter()
+
+# Cache TTL for library occupied count (seconds)
+LIBRARY_OCCUPIED_TTL = 60
+
+
+def _get_occupied_seats_cached(db: Session, library_id: str) -> int:
+    """Return occupied seat count for a library, from cache or DB."""
+    key = library_occupied_key(str(library_id))
+    cached_val = get_cached(key)
+    if cached_val is not None:
+        return int(cached_val)
+    count = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.auth_user_id).filter(
+        SeatBooking.library_id == library_id,
+        SeatBooking.status == "active",
+        Student.is_active == True,
+        Student.subscription_status != "Removed"
+    ).count()
+    set_cached(key, count, LIBRARY_OCCUPIED_TTL)
+    return count
+
 
 @router.get("/libraries", response_model=List[LibraryInfo])
 async def get_libraries(
@@ -30,14 +54,10 @@ async def get_libraries(
     
     result = []
     for library in libraries:
-        # Calculate occupied seats (exclude removed students)
-        occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.id).filter(
-            SeatBooking.library_id == library.id,
-            SeatBooking.status == "active",
-            Student.is_active == True,
-            Student.subscription_status != "Removed"
-        ).count()
+        occupied_seats = _get_occupied_seats_cached(db, str(library.id))
         
+        timings = library.shift_timings or []
+        shift_list = [str(t) for t in timings] if timings else None
         library_info = LibraryInfo(
             id=library.id,
             user_id=str(library.user_id),
@@ -46,7 +66,9 @@ async def get_libraries(
             total_seats=library.total_seats,
             occupied_seats=occupied_seats,
             latitude=library.latitude,
-            longitude=library.longitude
+            longitude=library.longitude,
+            has_shift_system=bool(library.has_shift_system),
+            shift_timings=shift_list,
         )
         
         # Calculate distance if user location is provided
@@ -69,24 +91,39 @@ async def get_libraries(
 @router.get("/libraries/{library_id}/subscription-plans", response_model=List[SubscriptionPlanResponse])
 async def get_library_subscription_plans(
     library_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    is_shift_student: Optional[bool] = Query(
+        None,
+        description="When set, filters plans for non-shift vs shift students (shift libraries).",
+    ),
+    shift_time: Optional[str] = Query(
+        None,
+        description="Student's shift slot; used when is_shift_student is true.",
+    ),
 ):
-    """Get subscription plans for a specific library (anonymous access)"""
-    # Verify library exists
+    """Get subscription plans for a specific library (anonymous access)."""
     library = db.query(AdminDetails).filter(AdminDetails.id == library_id).first()
     if not library:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Library not found"
+            detail="Library not found",
         )
-    
-    # Get active subscription plans for the library
-    plans = db.query(SubscriptionPlan).filter(
-        SubscriptionPlan.library_id == library_id,
-        SubscriptionPlan.is_active == True
-    ).order_by(SubscriptionPlan.months.asc()).all()
-    
-    return plans
+
+    query = (
+        db.query(SubscriptionPlan)
+        .filter(
+            SubscriptionPlan.library_id == library_id,
+            SubscriptionPlan.is_active == True,
+        )
+        .order_by(SubscriptionPlan.months.asc())
+    )
+    query = apply_plan_shift_filters(
+        query,
+        library,
+        is_shift_student=is_shift_student,
+        shift_time=shift_time,
+    )
+    return query.all()
 
 @router.post("/seat-booking", response_model=SeatBookingResponse)
 async def create_seat_booking(
@@ -104,7 +141,7 @@ async def create_seat_booking(
         )
     
     # Check if library has available seats
-    occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.id).filter(
+    occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.auth_user_id).filter(
         SeatBooking.library_id == booking_data.library_id,
         SeatBooking.status.in_(["active", "approved"]),
         Student.is_active == True,
@@ -220,7 +257,7 @@ async def verify_anonymous_booking_token_payment(
     library = db.query(AdminDetails).filter(AdminDetails.id == library_id).first()
     if not library:
         raise HTTPException(status_code=404, detail="Library not found")
-    occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.id).filter(
+    occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.auth_user_id).filter(
         SeatBooking.library_id == library_id,
         SeatBooking.status.in_(["active", "approved"]),
         Student.is_active == True,
@@ -253,26 +290,23 @@ async def verify_anonymous_booking_token_payment(
     db.add(booking)
     db.commit()
     db.refresh(booking)
-    # Send submission confirmation email to anonymous user
-    try:
-        from app.services.email_service import email_service
-        # Prepare booking details for email
+    # Queue submission confirmation email to anonymous user
+    if booking.email:
         booking_details = {
-            'amount': float(booking.amount) if booking.amount else 0,
-            'subscription_months': booking.subscription_months or 1,
-            'created_at': booking.created_at
+            "amount": float(booking.amount) if booking.amount else 0,
+            "subscription_months": booking.subscription_months or 1,
+            "created_at": booking.created_at,
         }
-        if booking.email:
-            email_result = email_service.send_booking_submission_email(
-                email=booking.email.strip(),
-                student_name=booking.name or "User",
-                library_name=library.library_name,
-                booking_details=booking_details
-            )
-            if not email_result.get("success"):
-                print(f"❌ Failed to send submission email to {booking.email}: {email_result.get('error')}")
-    except Exception as e:
-        print(f"❌ Error sending submission email (anonymous): {str(e)}")
+        enqueue_email_job(
+            db=db,
+            email_type="booking_submission",
+            to_email=booking.email.strip(),
+            payload={
+                "student_name": booking.name or "User",
+                "library_name": library.library_name,
+                "booking_details": booking_details,
+            },
+        )
     return booking
 
 @router.get("/seat-bookings", response_model=List[SeatBookingResponse])
@@ -326,78 +360,50 @@ async def update_seat_booking(
     db.commit()
     db.refresh(booking)
     
-    # Send approval email if booking was approved
     if update_data.get("status") == "approved":
-        try:
-            from app.services.email_service import email_service
-            from app.models.admin import AdminDetails
-            
-            # Get library details for email
-            library_details = db.query(AdminDetails).filter(
-                AdminDetails.user_id == current_admin.user_id
-            ).first()
-            
-            if library_details and booking.email:
-                # Prepare booking details for email
-                booking_details = {
-                    'amount': float(booking.amount) if booking.amount else 0,
-                    'subscription_months': booking.subscription_months or 1,
-                    'created_at': booking.created_at,
-                    'seat_number': booking.seat_number or 'TBD'
-                }
-                
-                # Send approval email
-                email_result = email_service.send_booking_approval_email(
-                    email=booking.email,
-                    student_name=booking.name,
-                    library_name=library_details.library_name,
-                    booking_details=booking_details
-                )
-                
-                if not email_result.get("success"):
-                    print(f"Failed to send approval email: {email_result.get('error')}")
-                else:
-                    print(f"Approval email sent successfully to {booking.email}")
-                    
-        except Exception as e:
-            print(f"Error sending approval email: {str(e)}")
-            # Don't fail the booking update if email fails
+        from app.models.admin import AdminDetails
+        library_details = db.query(AdminDetails).filter(
+            AdminDetails.user_id == current_admin.user_id
+        ).first()
+        if library_details and booking.email:
+            booking_details = {
+                "amount": float(booking.amount) if booking.amount else 0,
+                "subscription_months": booking.subscription_months or 1,
+                "created_at": booking.created_at,
+                "seat_number": booking.seat_number or "TBD",
+            }
+            enqueue_email_job(
+                db=db,
+                email_type="booking_approval",
+                to_email=booking.email,
+                payload={
+                    "student_name": booking.name,
+                    "library_name": library_details.library_name,
+                    "booking_details": booking_details,
+                },
+            )
     
-    # Send rejection email if booking was rejected
     elif update_data.get("status") == "rejected":
-        try:
-            from app.services.email_service import email_service
-            from app.models.admin import AdminDetails
-            
-            # Get library details for email
-            library_details = db.query(AdminDetails).filter(
-                AdminDetails.user_id == current_admin.user_id
-            ).first()
-            
-            if library_details and booking.email:
-                # Prepare booking details for email
-                booking_details = {
-                    'amount': float(booking.amount) if booking.amount else 0,
-                    'subscription_months': booking.subscription_months or 1,
-                    'created_at': booking.created_at
-                }
-                
-                # Send rejection email
-                email_result = email_service.send_booking_rejection_email(
-                    email=booking.email,
-                    student_name=booking.name,
-                    library_name=library_details.library_name,
-                    booking_details=booking_details
-                )
-                
-                if not email_result.get("success"):
-                    print(f"Failed to send rejection email: {email_result.get('error')}")
-                else:
-                    print(f"Rejection email sent successfully to {booking.email}")
-                    
-        except Exception as e:
-            print(f"Error sending rejection email: {str(e)}")
-            # Don't fail the booking update if email fails
+        from app.models.admin import AdminDetails
+        library_details = db.query(AdminDetails).filter(
+            AdminDetails.user_id == current_admin.user_id
+        ).first()
+        if library_details and booking.email:
+            booking_details = {
+                "amount": float(booking.amount) if booking.amount else 0,
+                "subscription_months": booking.subscription_months or 1,
+                "created_at": booking.created_at,
+            }
+            enqueue_email_job(
+                db=db,
+                email_type="booking_rejection",
+                to_email=booking.email,
+                payload={
+                    "student_name": booking.name,
+                    "library_name": library_details.library_name,
+                    "booking_details": booking_details,
+                },
+            )
     
     return booking
 
@@ -469,7 +475,7 @@ async def verify_student_booking_token_payment(
     library = db.query(AdminDetails).filter(AdminDetails.id == library_id).first()
     if not library:
         raise HTTPException(status_code=404, detail="Library not found")
-    occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.id).filter(
+    occupied_seats = db.query(SeatBooking).join(Student, SeatBooking.student_id == Student.auth_user_id).filter(
         SeatBooking.library_id == library_id,
         SeatBooking.status.in_(["active", "approved"]),
         Student.is_active == True,
@@ -508,28 +514,25 @@ async def verify_student_booking_token_payment(
     db.add(booking)
     db.commit()
     db.refresh(booking)
-    # Send submission confirmation email to student
-    try:
-        from app.services.email_service import email_service
-        from app.models.student import Student as StudentModel
-        # Fetch student for email address
-        student = db.query(StudentModel).filter(StudentModel.auth_user_id == current_user["user_id"]).first()
-        if student and student.email:
-            booking_details = {
-                'amount': float(booking.amount) if booking.amount else 0,
-                'subscription_months': 1,  # token request for booking, actual months handled later
-                'created_at': booking.created_at
-            }
-            email_result = email_service.send_booking_submission_email(
-                email=student.email.strip(),
-                student_name=student.name or "Student",
-                library_name=library.library_name,
-                booking_details=booking_details
-            )
-            if not email_result.get("success"):
-                print(f"❌ Failed to send submission email to {student.email}: {email_result.get('error')}")
-    except Exception as e:
-        print(f"❌ Error sending submission email (student): {str(e)}")
+    # Queue submission confirmation email to student
+    from app.models.student import Student as StudentModel
+    student = db.query(StudentModel).filter(StudentModel.auth_user_id == current_user["user_id"]).first()
+    if student and student.email:
+        booking_details = {
+            "amount": float(booking.amount) if booking.amount else 0,
+            "subscription_months": 1,
+            "created_at": booking.created_at,
+        }
+        enqueue_email_job(
+            db=db,
+            email_type="booking_submission",
+            to_email=student.email.strip(),
+            payload={
+                "student_name": student.name or "Student",
+                "library_name": library.library_name,
+                "booking_details": booking_details,
+            },
+        )
     return booking
 
 @router.patch("/seat-bookings/{booking_id}", response_model=SeatBookingResponse)
@@ -588,79 +591,53 @@ async def patch_seat_booking(
     
     db.commit()
     db.refresh(booking)
+    invalidate_admin_caches(str(current_admin.user_id))
+    invalidate_library_capacity(str(booking.library_id))
     
-    # Send approval email if booking was approved
     if update_data.get("status") == "approved":
-        try:
-            from app.services.email_service import email_service
-            from app.models.admin import AdminDetails
-            
-            # Get library details for email
-            library_details = db.query(AdminDetails).filter(
-                AdminDetails.user_id == current_admin.user_id
-            ).first()
-            
-            if library_details and booking.email:
-                # Prepare booking details for email
-                booking_details = {
-                    'amount': float(booking.amount) if booking.amount else 0,
-                    'subscription_months': booking.subscription_months or 1,
-                    'created_at': booking.created_at,
-                    'seat_number': booking.seat_number or 'TBD'
-                }
-                
-                # Send approval email
-                email_result = email_service.send_booking_approval_email(
-                    email=booking.email,
-                    student_name=booking.name,
-                    library_name=library_details.library_name,
-                    booking_details=booking_details
-                )
-                
-                if not email_result.get("success"):
-                    print(f"Failed to send approval email: {email_result.get('error')}")
-                else:
-                    print(f"Approval email sent successfully to {booking.email}")
-                    
-        except Exception as e:
-            print(f"Error sending approval email: {str(e)}")
-            # Don't fail the booking update if email fails
+        from app.models.admin import AdminDetails
+        library_details = db.query(AdminDetails).filter(
+            AdminDetails.user_id == current_admin.user_id
+        ).first()
+        if library_details and booking.email:
+            booking_details = {
+                "amount": float(booking.amount) if booking.amount else 0,
+                "subscription_months": booking.subscription_months or 1,
+                "created_at": booking.created_at,
+                "seat_number": booking.seat_number or "TBD",
+            }
+            enqueue_email_job(
+                db=db,
+                email_type="booking_approval",
+                to_email=booking.email,
+                payload={
+                    "student_name": booking.name,
+                    "library_name": library_details.library_name,
+                    "booking_details": booking_details,
+                },
+            )
     
-    # Send rejection email if booking was rejected
     elif update_data.get("status") == "rejected":
-        try:
-            from app.services.email_service import email_service
-            from app.models.admin import AdminDetails
-            
-            # Get library details for email
-            library_details = db.query(AdminDetails).filter(
-                AdminDetails.user_id == current_admin.user_id
-            ).first()
-            
-            if library_details and booking.email:
-                # Prepare booking details for email
-                booking_details = {
-                    'amount': float(booking.amount) if booking.amount else 0,
-                    'subscription_months': booking.subscription_months or 1,
-                    'created_at': booking.created_at
-                }
-                
-                # Send rejection email
-                email_result = email_service.send_booking_rejection_email(
-                    email=booking.email,
-                    student_name=booking.name,
-                    library_name=library_details.library_name,
-                    booking_details=booking_details
-                )
-                
-                if not email_result.get("success"):
-                    print(f"Failed to send rejection email: {email_result.get('error')}")
-                else:
-                    print(f"Rejection email sent successfully to {booking.email}")
-                    
-        except Exception as e:
-            print(f"Error sending rejection email: {str(e)}")
-            # Don't fail the booking update if email fails
+        from app.models.admin import AdminDetails
+        library_details = db.query(AdminDetails).filter(
+            AdminDetails.user_id == current_admin.user_id
+        ).first()
+        if library_details and booking.email:
+            booking_details = {
+                "amount": float(booking.amount) if booking.amount else 0,
+                "subscription_months": booking.subscription_months or 1,
+                "created_at": booking.created_at,
+            }
+            enqueue_email_job(
+                db=db,
+                email_type="booking_rejection",
+                to_email=booking.email,
+                payload={
+                    "student_name": booking.name,
+                    "library_name": library_details.library_name,
+                    "booking_details": booking_details,
+                },
+            )
     
     return booking
 
@@ -757,41 +734,29 @@ async def confirm_payment(
     # Commit all changes
     db.commit()
     db.refresh(booking)
+    invalidate_admin_caches(str(booking.admin_id))
+    invalidate_library_capacity(str(booking.library_id))
     
-    # Send payment confirmation email
-    try:
-        from app.services.email_service import email_service
-        from app.models.admin import AdminDetails
-        
-        # Get library details
-        library_details = db.query(AdminDetails).filter(
-            AdminDetails.user_id == booking.admin_id
-        ).first()
-        
-        if library_details and booking.email:
-            # Send payment confirmation email
-            email_result = email_service.send_payment_confirmation_email(
-                email=booking.email,
-                student_name=booking.name,
-                library_name=library_details.library_name,
-                booking_details={
-                    'amount': float(booking.amount) if booking.amount else 0,
-                    'subscription_months': booking.subscription_months or 1,
-                    'payment_method': payment_data.payment_method,
-                    'payment_reference': payment_data.payment_reference,
-                    'subscription_start': booking.start_date,
-                    'subscription_end': booking.end_date
-                }
-            )
-            
-            if not email_result.get("success"):
-                print(f"Failed to send payment confirmation email: {email_result.get('error')}")
-            else:
-                print(f"Payment confirmation email sent successfully to {booking.email}")
-                
-    except Exception as e:
-        print(f"Error sending payment confirmation email: {str(e)}")
-        # Don't fail the payment confirmation if email fails
+    # Queue payment confirmation email
+    from app.models.admin import AdminDetails
+    library_details = db.query(AdminDetails).filter(
+        AdminDetails.user_id == booking.admin_id
+    ).first()
+    if library_details and booking.email:
+        enqueue_email_job(
+            db=db,
+            email_type="payment_confirmation",
+            to_email=booking.email,
+            payload={
+                "student_name": booking.name or "Student",
+                "library_name": library_details.library_name,
+                "plan_name": f"{booking.subscription_months or 1} Month Plan",
+                "amount": float(booking.amount) if booking.amount else 0,
+                "payment_id": payment_data.payment_reference or "",
+                "subscription_end": booking.end_date.strftime("%d %B %Y") if booking.end_date else "",
+                "base_url": "",
+            },
+        )
     
     return booking
 
@@ -853,8 +818,11 @@ async def create_razorpay_order(
             detail="Payment already completed for this booking"
         )
     
-    # Create Razorpay order
-    receipt_id = f"booking_{booking.id}"
+    # Create Razorpay order (full amount → library linked account when Route is enabled; not Rs.1 token)
+    library = db.query(AdminDetails).filter(AdminDetails.id == booking.library_id).first()
+    receipt_id = f"bk{str(booking.id).replace('-', '')[:10]}_{int(datetime.utcnow().timestamp())}"
+    if len(receipt_id) > 40:
+        receipt_id = receipt_id[:40]
     notes = {
         "booking_id": str(booking.id),
         "student_name": booking.name or "Anonymous",
@@ -863,12 +831,20 @@ async def create_razorpay_order(
     
     if order_data.notes:
         notes.update(order_data.notes)
+
+    transfers = order_transfers_to_library(
+        library,
+        amount_paise=order_data.amount,
+        currency=order_data.currency,
+        notes=notes,
+    )
     
     result = razorpay_service.create_order(
         amount=order_data.amount,
         currency=order_data.currency,
         receipt=receipt_id,
-        notes=notes
+        notes=notes,
+        transfers=transfers,
     )
     
     if not result["success"]:
@@ -999,41 +975,26 @@ async def verify_razorpay_payment(
     # Commit all changes
     db.commit()
     db.refresh(booking)
+    invalidate_admin_caches(str(booking.admin_id))
+    invalidate_library_capacity(str(booking.library_id))
     
-    # Send payment confirmation email
-    try:
-        from app.services.email_service import email_service
-        from app.models.admin import AdminDetails
-        
-        # Get library details for email
-        library = db.query(AdminDetails).filter(AdminDetails.id == booking.library_id).first()
-        
-        if library and booking.email:
-            # Prepare booking details for email
-            booking_details = {
-                'amount': float(booking.amount) if booking.amount else 0,
-                'subscription_months': booking.subscription_months or 1,
-                'payment_method': 'razorpay',
-                'payment_reference': payment_data.razorpay_payment_id,
-                'subscription_start': booking.start_date,
-                'subscription_end': booking.end_date
-            }
-            
-            # Send payment confirmation email
-            email_result = email_service.send_payment_confirmation_email(
-                email=booking.email,
-                student_name=booking.name or "Student",
-                library_name=library.library_name,
-                booking_details=booking_details
-            )
-            
-            if not email_result.get("success"):
-                print(f"Failed to send payment confirmation email: {email_result.get('error')}")
-            else:
-                print(f"Payment confirmation email sent successfully to {booking.email}")
-                
-    except Exception as e:
-        print(f"Error sending payment confirmation email: {str(e)}")
-        # Don't fail the payment verification if email fails
+    # Queue payment confirmation email
+    from app.models.admin import AdminDetails
+    library = db.query(AdminDetails).filter(AdminDetails.id == booking.library_id).first()
+    if library and booking.email:
+        enqueue_email_job(
+            db=db,
+            email_type="payment_confirmation",
+            to_email=booking.email,
+            payload={
+                "student_name": booking.name or "Student",
+                "library_name": library.library_name,
+                "plan_name": f"{booking.subscription_months or 1} Month Plan",
+                "amount": float(booking.amount) if booking.amount else 0,
+                "payment_id": payment_data.razorpay_payment_id,
+                "subscription_end": booking.end_date.strftime("%d %B %Y") if booking.end_date else "",
+                "base_url": "",
+            },
+        )
     
     return booking

@@ -15,7 +15,7 @@ from app.schemas.referral import (
 from app.models.referral import ReferralCode, Referral
 from app.models.admin import AdminUser
 from app.models.student import Student
-from app.services.email_service import EmailService
+from app.services.email_queue_service import enqueue_email_job
 
 router = APIRouter()
 
@@ -285,12 +285,16 @@ async def create_referral(
         code = db.query(ReferralCode).filter(ReferralCode.id == referral.referral_code_id).first()
         code_str = code.code if code else ""
 
-        EmailService().send_referral_invitation_email(
-            email=referral.referred_email,
-            referrer_name=referrer_name or "Your friend",
-            referral_code=code_str,
-            library_name=library_name,
-            invite_url=""
+        enqueue_email_job(
+            db=db,
+            email_type="referral_invitation",
+            to_email=referral.referred_email,
+            payload={
+                "referrer_name": referrer_name or "Your friend",
+                "referral_code": code_str,
+                "library_name": library_name,
+                "invite_url": "",
+            },
         )
       except Exception as e:
         # Log-only failure; do not raise

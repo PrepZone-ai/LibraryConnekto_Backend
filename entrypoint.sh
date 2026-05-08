@@ -5,10 +5,12 @@ set -euo pipefail
 : "${PORT:=8080}"
 : "${UVICORN_WORKERS:=2}"
 : "${UVICORN_LOG_LEVEL:=info}"
+: "${RUN_MODE:=web}"
+: "${CELERY_WORKER_CONCURRENCY:=4}"
 
 # Show environment summary (without secrets)
-echo "==> Starting LibraryConnekto Backend (FastAPI)"
-echo "PORT=${PORT}  WORKERS=${UVICORN_WORKERS}  LOG_LEVEL=${UVICORN_LOG_LEVEL}"
+echo "==> Starting LibraryConnekto Backend"
+echo "MODE=${RUN_MODE} PORT=${PORT} WORKERS=${UVICORN_WORKERS} LOG_LEVEL=${UVICORN_LOG_LEVEL}"
 echo "User: $(whoami)"
 
 # Database connection test - Skip migrations if tables exist
@@ -46,13 +48,24 @@ fi
 
 echo "✅ Environment validation passed"
 
-# Start Uvicorn (Cloud Run passes $PORT)
-echo "==> Starting Uvicorn server..."
-exec uvicorn main:app \
-  --host 0.0.0.0 \
-  --port "${PORT}" \
-  --workers "${UVICORN_WORKERS}" \
-  --log-level "${UVICORN_LOG_LEVEL}" \
-  --access-log \
-  --loop uvloop \
-  --http httptools
+if [ "${RUN_MODE}" = "worker" ]; then
+  echo "==> Starting Celery worker..."
+  exec celery -A app.celery_app:celery_app worker \
+    --loglevel="${UVICORN_LOG_LEVEL}" \
+    --concurrency="${CELERY_WORKER_CONCURRENCY}"
+elif [ "${RUN_MODE}" = "beat" ]; then
+  echo "==> Starting Celery beat..."
+  exec celery -A app.celery_app:celery_app beat \
+    --loglevel="${UVICORN_LOG_LEVEL}"
+else
+  # Start Uvicorn (Cloud Run passes $PORT)
+  echo "==> Starting Uvicorn server..."
+  exec uvicorn main:app \
+    --host 0.0.0.0 \
+    --port "${PORT}" \
+    --workers "${UVICORN_WORKERS}" \
+    --log-level "${UVICORN_LOG_LEVEL}" \
+    --access-log \
+    --loop uvloop \
+    --http httptools
+fi

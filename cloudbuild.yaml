@@ -5,6 +5,8 @@
 
 substitutions:
   _SERVICE: libraryconnekto-api
+  _WORKER_SERVICE: libraryconnekto-api-worker
+  _BEAT_SERVICE: libraryconnekto-api-beat
   _REGION: asia-south1
   _IMAGE: gcr.io/$PROJECT_ID/libraryconnekto-api
 
@@ -32,6 +34,34 @@ steps:
         '--memory','512Mi',
         '--max-instances','5'
         # Add env vars via --set-env-vars or use Secret Manager with --set-secrets
+      ]
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run','deploy','${_WORKER_SERVICE}',
+        '--image','${_IMAGE}:$SHORT_SHA',
+        '--region','${_REGION}',
+        '--platform','managed',
+        '--no-allow-unauthenticated',
+        '--set-env-vars','RUN_MODE=worker,SCHEDULER_OWNER=worker',
+        '--set-env-vars','CELERY_WORKER_CONCURRENCY=4,UVICORN_LOG_LEVEL=info',
+        '--max-instances','3'
+      ]
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      [
+        'run','deploy','${_BEAT_SERVICE}',
+        '--image','${_IMAGE}:$SHORT_SHA',
+        '--region','${_REGION}',
+        '--platform','managed',
+        '--no-allow-unauthenticated',
+        '--set-env-vars','RUN_MODE=beat,SCHEDULER_OWNER=worker',
+        '--set-env-vars','UVICORN_LOG_LEVEL=info',
+        '--max-instances','1'
       ]
 
 images:

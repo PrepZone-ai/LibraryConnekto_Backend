@@ -4,20 +4,64 @@ from sqlalchemy import func
 from typing import List
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+import logging
+
+from app.core.mime_guess import get_mime_from_buffer
 
 from app.database import get_db
 from app.auth.dependencies import get_current_student
 from app.auth.jwt import get_password_hash
 from app.schemas.student import (
-    StudentResponse, StudentUpdate, StudentAttendanceCreate, StudentAttendanceResponse,
-    StudentTaskCreate, StudentTaskUpdate, StudentTaskResponse,
-    StudentExamCreate, StudentExamUpdate, StudentExamResponse
+    StudentResponse,
+    StudentUpdate,
+    StudentAttendanceCreate,
+    StudentAttendanceResponse,
+    StudentTaskCreate,
+    StudentTaskUpdate,
+    StudentTaskResponse,
+    StudentExamCreate,
+    StudentExamUpdate,
+    StudentExamResponse,
 )
-from app.models.student import Student, StudentAttendance, StudentTask, StudentExam, StudentMessage
+from app.schemas.qr_transfer import StudentQRTokenResponse
+from app.models.student import (
+    Student,
+    StudentAttendance,
+    StudentTask,
+    StudentExam,
+    StudentMessage,
+)
 from app.services.notification_service import NotificationService
+from app.services.qr_transfer_service import issue_student_qr_token
+from app.core.config import settings
+from app.core.cache import (
+    admin_location_key,
+    attendance_location_rate_limit_key,
+    cached,
+    get_cached,
+    invalidate_admin_caches,
+    invalidate_student_dashboard,
+    set_cached,
+    set_if_absent,
+    student_dashboard_key,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _calculate_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    import math
+
+    rlat1, rlon1 = math.radians(lat1), math.radians(lon1)
+    rlat2, rlon2 = math.radians(lat2), math.radians(lon2)
+    dlat = rlat2 - rlat1
+    dlon = rlon2 - rlon1
+    a = math.sin(dlat / 2) ** 2 + math.cos(rlat1) * math.cos(rlat2) * math.sin(dlon / 2) ** 2
+    c = 2 * math.asin(math.sqrt(a))
+    return 6371 * c * 1000
 
 @router.get("/test-auth")
 async def test_auth(
@@ -75,16 +119,9 @@ async def set_student_password(
         # Check if this is first login (password is still mobile number)
         # Allow password change if it's still the mobile number
         try:
-            from app.auth.jwt import verify_password, get_password_hash
+            from app.auth.jwt import verify_password
             is_first_login = verify_password(student.mobile_no, student.hashed_password)
-            
-            # Additional check: if password is exactly the mobile number (hash comparison)
-            if not is_first_login:
-                mobile_hash = get_password_hash(student.mobile_no)
-                if mobile_hash == student.hashed_password:
-                    is_first_login = True
-                    print(f"[DEBUG] First login detected via hash comparison in set-password")
-            
+
             if not is_first_login:
                 # Password has already been changed from mobile number
                 # This is not a first login scenario
@@ -167,56 +204,81 @@ async def get_student_profile(
     
     return student_data
 
+
+@router.get("/qr-token", response_model=StudentQRTokenResponse)
+async def get_student_qr_token(
+    current_student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """Create a short-lived signed QR token for the current student."""
+    return issue_student_qr_token(db, current_student)
+
+
+@router.post("/qr-rotate", response_model=StudentQRTokenResponse)
+async def rotate_student_qr_token(
+    current_student: Student = Depends(get_current_student),
+    db: Session = Depends(get_db),
+):
+    """Rotate and return a new short-lived signed QR token."""
+    return issue_student_qr_token(db, current_student)
+
 @router.post("/profile/image")
 async def upload_profile_image(
     profile_image: UploadFile = File(...),
     current_student: Student = Depends(get_current_student),
     db: Session = Depends(get_db)
 ):
-    """Upload profile image for student"""
-    # Validate file type
-    if not profile_image.content_type.startswith('image/'):
+    """Upload profile image for student with validation."""
+    content = await profile_image.read()
+
+    max_size = min(settings.MAX_FILE_SIZE, 5 * 1024 * 1024)
+    if len(content) > max_size:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File must be an image"
+            detail="File size must be less than 5MB",
         )
-    
-    # Validate file size (max 5MB)
-    if profile_image.size > 5 * 1024 * 1024:
+
+    mime_type = get_mime_from_buffer(content)
+    if not mime_type or not mime_type.startswith("image/"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="File size must be less than 5MB"
+            detail="File must be an image",
         )
-    
+
     try:
-        # Create uploads directory if it doesn't exist
         upload_dir = "uploads/profile_images"
         os.makedirs(upload_dir, exist_ok=True)
-        
-        # Generate unique filename
-        file_extension = profile_image.filename.split('.')[-1] if '.' in profile_image.filename else 'jpg'
+
+        file_extension = (
+            profile_image.filename.split(".")[-1]
+            if "." in profile_image.filename
+            else "jpg"
+        )
         filename = f"{current_student.id}_{uuid.uuid4().hex}.{file_extension}"
         file_path = os.path.join(upload_dir, filename)
-        
-        # Save file
+
         with open(file_path, "wb") as buffer:
-            content = await profile_image.read()
             buffer.write(content)
-        
-        # Update student profile with image path
+
         current_student.profile_image = f"/uploads/profile_images/{filename}"
         db.commit()
         db.refresh(current_student)
-        
+
         return {
             "message": "Profile image uploaded successfully",
-            "profile_image": current_student.profile_image
+            "profile_image": current_student.profile_image,
+            "mime_type": mime_type,
+            "size": len(content),
         }
-        
+
     except Exception as e:
+        logger.error(
+            "Failed to upload profile image",
+            extra={"student_id": str(current_student.id), "error": str(e)},
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload image: {str(e)}"
+            detail="Failed to upload image",
         )
 
 @router.delete("/profile/image")
@@ -251,6 +313,7 @@ async def delete_profile_image(
         )
 
 @router.get("/dashboard/stats")
+@cached(ttl=45, key_builder=lambda current_student, db: student_dashboard_key(str(current_student.auth_user_id)))
 async def get_student_dashboard_stats(
     current_student: Student = Depends(get_current_student),
     db: Session = Depends(get_db)
@@ -448,46 +511,34 @@ async def checkin_student(
     current_student: Student = Depends(get_current_student)
 ):
     """Check in student with location validation"""
-    from app.models.admin import AdminUser, AdminDetails
-    import math
-    
-    print(f"[DEBUG] Student checkin attempt - Student ID: {current_student.id}, Auth User ID: {current_student.auth_user_id}, Admin ID: {current_student.admin_id}")
-    print(f"[DEBUG] Location data - Latitude: {attendance_data.latitude}, Longitude: {attendance_data.longitude}")
+    from app.models.admin import AdminDetails
     
     # Get admin/library location
     admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_student.admin_id).first()
     if not admin_details:
-        print(f"[DEBUG] Admin details not found for admin_id: {current_student.admin_id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Library information not found"
         )
-    
-    print(f"[DEBUG] Admin details found - Library: {admin_details.library_name}, Lat: {admin_details.latitude}, Lon: {admin_details.longitude}")
-    
+
     # Calculate distance from library
     if attendance_data.latitude and attendance_data.longitude and admin_details.latitude and admin_details.longitude:
-        # Haversine formula to calculate distance
-        lat1, lon1 = math.radians(admin_details.latitude), math.radians(admin_details.longitude)
-        lat2, lon2 = math.radians(attendance_data.latitude), math.radians(attendance_data.longitude)
-        
-        dlat = lat2 - lat1
-        dlon = lon2 - lon1
-        
-        a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-        c = 2 * math.asin(math.sqrt(a))
-        distance = 6371 * c * 1000  # Distance in meters
-        
-        print(f"[DEBUG] Distance calculation - Distance: {distance:.1f}m")
-        
-        if distance > 100:  # 100 meters
-            print(f"[DEBUG] Student too far from library - Distance: {distance:.1f}m")
+        distance = _calculate_distance_meters(
+            admin_details.latitude,
+            admin_details.longitude,
+            attendance_data.latitude,
+            attendance_data.longitude,
+        )
+
+        if distance > settings.ATTENDANCE_LOCATION_MAX_DISTANCE_METERS:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Student is too far from library. Distance: {distance:.1f}m (max: 100m)"
+                detail=(
+                    f"Student is too far from library. Distance: {distance:.1f}m "
+                    f"(max: {settings.ATTENDANCE_LOCATION_MAX_DISTANCE_METERS}m)"
+                ),
             )
     else:
-        print(f"[DEBUG] Missing location data - Student lat: {attendance_data.latitude}, lon: {attendance_data.longitude}, Admin lat: {admin_details.latitude}, lon: {admin_details.longitude}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Location data required for check-in"
@@ -499,10 +550,7 @@ async def checkin_student(
         StudentAttendance.exit_time.is_(None)
     ).first()
     
-    print(f"[DEBUG] Existing attendance check - Found: {existing_attendance is not None}")
-    
     if existing_attendance:
-        print(f"[DEBUG] Student already checked in - Attendance ID: {existing_attendance.id}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Student is already checked in"
@@ -513,7 +561,8 @@ async def checkin_student(
         student_id=current_student.auth_user_id,
         admin_id=current_student.admin_id,
         latitude=attendance_data.latitude,
-        longitude=attendance_data.longitude
+        longitude=attendance_data.longitude,
+        last_ping_at=datetime.now(timezone.utc),
     )
     
     # Update student status
@@ -523,6 +572,8 @@ async def checkin_student(
     db.add(attendance)
     db.commit()
     db.refresh(attendance)
+    invalidate_student_dashboard(str(current_student.auth_user_id))
+    invalidate_admin_caches(str(current_student.admin_id))
     
     return attendance
 
@@ -545,7 +596,6 @@ async def checkout_student(
         )
     
     # Update attendance record
-    from datetime import datetime, timezone
     attendance.exit_time = datetime.now(timezone.utc)
     
     # Ensure entry_time is timezone-aware for calculation
@@ -561,6 +611,8 @@ async def checkout_student(
     current_student.status = "Absent"
     
     db.commit()
+    invalidate_student_dashboard(str(current_student.auth_user_id))
+    invalidate_admin_caches(str(current_student.admin_id))
     
     return {"message": "Successfully checked out"}
 
@@ -570,62 +622,77 @@ async def check_student_location(
     db: Session = Depends(get_db),
     current_student: Student = Depends(get_current_student)
 ):
-    """Check student location and auto checkout if outside range"""
-    from app.models.admin import AdminUser, AdminDetails
-    import math
-    
-    # Get admin/library location
-    admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_student.admin_id).first()
-    if not admin_details or not admin_details.latitude or not admin_details.longitude:
-        return {"message": "Library location not configured", "distance": None}
-    
-    if not attendance_data.latitude or not attendance_data.longitude:
-        return {"message": "Student location not available", "distance": None}
-    
-    # Calculate distance from library
-    lat1, lon1 = math.radians(admin_details.latitude), math.radians(admin_details.longitude)
-    lat2, lon2 = math.radians(attendance_data.latitude), math.radians(attendance_data.longitude)
-    
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    
-    a = math.sin(dlat/2)**2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon/2)**2
-    c = 2 * math.asin(math.sqrt(a))
-    distance = 6371 * c * 1000  # Distance in meters
-    
-    # Check if student is currently checked in
+    """Check location with server safeguards and auto-checkout when out of range."""
+    from app.models.admin import AdminDetails
+
+    # Server-side safeguard: rate-limit location checks per student
+    rate_limit_key = attendance_location_rate_limit_key(str(current_student.auth_user_id))
+    allowed = set_if_absent(
+        rate_limit_key,
+        "1",
+        ttl=settings.ATTENDANCE_CHECK_LOCATION_RATE_LIMIT_SECONDS,
+    )
+    if not allowed:
+        return {"ok": True, "skipped": "rate_limited"}
+
+    # Check active attendance first; if not checked in, nothing to do
     active_attendance = db.query(StudentAttendance).filter(
         StudentAttendance.student_id == current_student.auth_user_id,
         StudentAttendance.exit_time.is_(None)
     ).first()
-    
-    if active_attendance and distance > 100:
-        # Auto checkout if outside range
-        from datetime import datetime, timezone
+    if not active_attendance:
+        return {"ok": True, "active": False}
+
+    # Update ping timestamp even if location is unavailable
+    active_attendance.last_ping_at = datetime.now(timezone.utc)
+    db.commit()
+
+    if attendance_data.latitude is None or attendance_data.longitude is None:
+        return {"ok": True, "active": True, "location": "missing"}
+
+    # Cache admin/library coordinates to avoid DB hits on every ping
+    cached_location = get_cached(admin_location_key(str(current_student.admin_id)))
+    if cached_location:
+        admin_lat = cached_location.get("latitude")
+        admin_lon = cached_location.get("longitude")
+    else:
+        admin_details = db.query(AdminDetails).filter(
+            AdminDetails.user_id == current_student.admin_id
+        ).first()
+        if not admin_details or admin_details.latitude is None or admin_details.longitude is None:
+            return {"ok": True, "active": True, "library_location": "missing"}
+        admin_lat = admin_details.latitude
+        admin_lon = admin_details.longitude
+        set_cached(
+            admin_location_key(str(current_student.admin_id)),
+            {"latitude": admin_lat, "longitude": admin_lon},
+            ttl=settings.ATTENDANCE_LIBRARY_LOCATION_CACHE_TTL_SECONDS,
+        )
+
+    distance = _calculate_distance_meters(
+        admin_lat,
+        admin_lon,
+        attendance_data.latitude,
+        attendance_data.longitude,
+    )
+    in_range = distance <= settings.ATTENDANCE_LOCATION_MAX_DISTANCE_METERS
+
+    if not in_range:
+        # Auto-checkout if outside allowed range
         active_attendance.exit_time = datetime.now(timezone.utc)
-        
-        # Ensure entry_time is timezone-aware for calculation
         if active_attendance.entry_time.tzinfo is None:
             entry_time_aware = active_attendance.entry_time.replace(tzinfo=timezone.utc)
         else:
             entry_time_aware = active_attendance.entry_time
-        
+
         active_attendance.total_duration = active_attendance.exit_time - entry_time_aware
         current_student.status = "Absent"
         db.commit()
-        
-        return {
-            "message": "Auto checked out - outside library range",
-            "distance": round(distance, 1),
-            "auto_checkout": True
-        }
-    
-    return {
-        "message": "Location check completed",
-        "distance": round(distance, 1),
-        "auto_checkout": False,
-        "in_range": distance <= 100
-    }
+        invalidate_student_dashboard(str(current_student.auth_user_id))
+        invalidate_admin_caches(str(current_student.admin_id))
+        return {"ok": True, "auto_checkout": True, "distance_m": round(distance, 1)}
+
+    return {"ok": True, "auto_checkout": False, "distance_m": round(distance, 1)}
 
 @router.get("/attendance", response_model=List[StudentAttendanceResponse])
 async def get_student_attendance(
@@ -693,13 +760,14 @@ async def create_task(
     db.add(task)
     db.commit()
     db.refresh(task)
+    invalidate_student_dashboard(str(current_student.auth_user_id))
     
-    # Create automatic reminders for the task if it has a due date
-    if task.due_date:
-        notification_service = NotificationService(db)
-        # Create default reminders: 1 hour and 1 day before due date
-        default_reminders = ["1_hour", "1_day"]
-        notification_service.create_task_reminders(task, default_reminders)
+    # Create automatic reminders for the task if it has a due date (disabled for now to avoid DB hit on every task create)
+    # if task.due_date:
+    #     notification_service = NotificationService(db)
+    #     # Create default reminders: 1 hour and 1 day before due date
+    #     default_reminders = ["1_hour", "1_day"]
+    #     notification_service.create_task_reminders(task, default_reminders)
     
     return task
 
@@ -746,6 +814,7 @@ async def update_task(
     
     db.commit()
     db.refresh(task)
+    invalidate_student_dashboard(str(current_student.auth_user_id))
     
     return task
 
@@ -769,6 +838,7 @@ async def delete_task(
     
     db.delete(task)
     db.commit()
+    invalidate_student_dashboard(str(current_student.auth_user_id))
     
     return {"message": "Task deleted successfully"}
 

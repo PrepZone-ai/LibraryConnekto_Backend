@@ -18,6 +18,7 @@ class AdminUser(Base):
     status = Column(String, default="pending")  # pending, active
     email_verification_token = Column(String, nullable=True)
     email_verified = Column(Boolean, default=False)
+    password_reset_token = Column(String, nullable=True, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
@@ -44,6 +45,13 @@ class AdminDetails(Base):
     has_shift_system = Column(Boolean, default=False)
     shift_timings = Column(ARRAY(String))
     referral_code = Column(String, unique=True)
+    bank_account_holder_name = Column(String, nullable=True)
+    bank_account_number = Column(String, nullable=True)
+    bank_ifsc_code = Column(String, nullable=True)
+    bank_name = Column(String, nullable=True)
+    bank_branch_name = Column(String, nullable=True)
+    # Razorpay Route: linked account id (acc_…) for settling non-token payments to this library
+    razorpay_linked_account_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     

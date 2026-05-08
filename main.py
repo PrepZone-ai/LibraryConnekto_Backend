@@ -1,14 +1,29 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 import os
+from datetime import datetime
+import uuid
+import logging
 
 from app.core.config import settings
+from app.core.mime_guess import get_mime_from_buffer
 from app.api.api_v1.api import api_router
-from app.database import engine, init_db
+from app.database import engine, init_db, get_db
 from app.models import Base
 from app.services.notification_scheduler import start_notification_scheduler, stop_notification_scheduler
-from app.core.config import settings
+from app.middleware.rate_limit import (
+    get_rate_limiter,
+    rate_limit_exceeded_handler,
+)
+from slowapi.errors import RateLimitExceeded
+from app.middleware.security import SecurityHeadersMiddleware
+from app.core.logging_config import logger
+from app.core.sentry_config import init_sentry
+
+init_sentry()
 
 # Create FastAPI app
 app = FastAPI(
@@ -19,6 +34,10 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+limiter = get_rate_limiter()
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
 # CORS middleware - must be added before any routes
 app.add_middleware(
     CORSMiddleware,
@@ -28,6 +47,8 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["Content-Disposition"],
 )
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Create upload directory if it doesn't exist
 os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
@@ -47,20 +68,20 @@ async def options_handler():
 
 @app.on_event("startup")
 async def startup_event():
-    """Create database tables on startup and start notification scheduler"""
-    # Initialize database and create tables
+    """Create database tables on startup and start notification scheduler."""
     try:
         init_db()
-        print("✅ Database initialization completed")
     except Exception as e:
-        print(f"⚠️  Database initialization failed: {e}")
-        # Don't exit, let the app start anyway
+        logger.error(
+            "Database initialization failed",
+            extra={"event": "db_init", "error": str(e)},
+        )
     
     # Start the notification scheduler if enabled
-    if getattr(settings, "EMAIL_SCHEDULER_ENABLED", True):
+    if getattr(settings, "EMAIL_SCHEDULER_ENABLED", True) and getattr(settings, "SCHEDULER_OWNER", "worker") == "api":
         await start_notification_scheduler()
     else:
-        print("[Scheduler] EMAIL_SCHEDULER_ENABLED is false; scheduler will not start.")
+        print("[Scheduler] API scheduler disabled (managed by worker/beat or config).")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -92,29 +113,79 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Enhanced health check with DB and cache connectivity."""
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+    }
+
+    # Check database
+    try:
+        db = next(get_db())
+        db.execute(text("SELECT 1"))
+        health_status["database"] = "connected"
+        db.close()
+    except Exception as e:
+        health_status["status"] = "unhealthy"
+        health_status["database"] = f"error: {str(e)}"
+
+    # Check Redis cache (optional)
+    try:
+        from app.core.cache import get_redis
+
+        r = get_redis()
+        if r:
+            r.ping()
+            health_status["cache"] = "connected"
+        else:
+            health_status["cache"] = "disconnected"
+    except Exception:
+        health_status["cache"] = "disconnected"
+
+    status_code = 200 if health_status["status"] == "healthy" else 503
+    return JSONResponse(content=health_status, status_code=status_code)
 
 # File upload endpoint
+ALLOWED_MIME_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
 @app.post("/upload")
 async def upload_file(file: UploadFile = File(...)):
-    """Upload a file"""
-    import uuid
+    """Secure file upload with size and MIME-type validation."""
+    # Read content once to inspect and then save
+    content = await file.read()
 
-    # Generate unique filename
+    # Check file size (use settings.MAX_FILE_SIZE)
+    if len(content) > settings.MAX_FILE_SIZE:
+        raise HTTPException(status_code=413, detail="File too large")
+
+    # Verify MIME type (pure-Python; no libmagic DLL on Windows)
+    mime_type = get_mime_from_buffer(content)
+    if not mime_type or mime_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(status_code=400, detail="File type not allowed")
+
+    # Generate safe filename
     file_extension = os.path.splitext(file.filename)[1]
     unique_filename = f"{uuid.uuid4()}{file_extension}"
     file_path = os.path.join(settings.UPLOAD_DIR, unique_filename)
 
     # Save file
     with open(file_path, "wb") as buffer:
-        content = await file.read()
         buffer.write(content)
 
     return {
         "filename": unique_filename,
         "original_filename": file.filename,
         "url": f"/uploads/{unique_filename}",
-        "size": len(content)
+        "size": len(content),
+        "mime_type": mime_type,
     }
 
 if __name__ == "__main__":

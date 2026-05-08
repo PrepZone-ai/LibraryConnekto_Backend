@@ -38,7 +38,9 @@ async def get_removal_requests(
         )
         
         # Get total counts
-        stats = removal_service.get_removal_stats(admin_id=current_admin.id)
+        stats = removal_service.get_removal_stats(
+            admin_id=current_admin.id, admin_user_id=current_admin.user_id
+        )
         
         return StudentRemovalRequestList(
             requests=requests,
@@ -120,13 +122,25 @@ async def update_removal_request(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only pending requests can be updated"
             )
+
+        if update_data.status == RemovalRequestStatus.CASH_RECEIVED and not update_data.plan_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="plan_id is required when recording cash payment",
+            )
         
         # Update the request
-        updated_request = removal_service.update_removal_request(
-            request_id=request_id,
-            update_data=update_data,
-            processed_by=current_admin.id
-        )
+        try:
+            updated_request = removal_service.update_removal_request(
+                request_id=request_id,
+                update_data=update_data,
+                processed_by=current_admin.id,
+            )
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(ve),
+            ) from ve
         
         if not updated_request:
             raise HTTPException(
@@ -153,7 +167,9 @@ async def get_removal_stats(
     try:
         removal_service = StudentRemovalService(db)
         
-        stats = removal_service.get_removal_stats(admin_id=current_admin.id)
+        stats = removal_service.get_removal_stats(
+            admin_id=current_admin.id, admin_user_id=current_admin.user_id
+        )
         
         return StudentRemovalStats(**stats)
         
@@ -195,21 +211,20 @@ async def get_overdue_students(
     """Get list of students with expired subscriptions (potential removal candidates)"""
     try:
         from app.models.student import Student
-        from datetime import datetime, timedelta
+        from datetime import datetime, timezone
         
-        # Find students with expired subscriptions (2+ days overdue)
-        overdue_cutoff = datetime.now() - timedelta(days=2)
+        now = datetime.now(timezone.utc)
         
         overdue_students = db.query(Student).filter(
-            Student.admin_id == current_admin.id,
-            Student.subscription_end < overdue_cutoff,
+            Student.admin_id == current_admin.user_id,
+            Student.subscription_end < now,
             Student.subscription_status == "Expired",
             Student.is_active == True
         ).all()
         
         result = []
         for student in overdue_students:
-            days_overdue = (datetime.now() - student.subscription_end).days
+            days_overdue = max(0, (now - student.subscription_end).days)
             
             # Check if removal request already exists
             from app.models.student_removal import StudentRemovalRequest, RemovalRequestStatus
@@ -218,9 +233,10 @@ async def get_overdue_students(
                 StudentRemovalRequest.status == RemovalRequestStatus.PENDING
             ).first()
             
+            display_name = (student.name or f"{student.first_name or ''} {student.last_name or ''}").strip()
             result.append({
                 "student_id": student.id,
-                "student_name": f"{student.first_name} {student.last_name}".strip(),
+                "student_name": display_name or student.email,
                 "student_email": student.email,
                 "subscription_end": student.subscription_end.isoformat(),
                 "days_overdue": days_overdue,
@@ -248,12 +264,14 @@ async def restore_student(
 ):
     """Restore a removed student back to the library"""
     try:
+        from app.models.student import Student
+
         removal_service = StudentRemovalService(db)
         
         # Check if student exists and belongs to this admin's library
         student = db.query(Student).filter(
             Student.id == student_id,
-            Student.admin_id == current_admin.id
+            Student.admin_id == current_admin.user_id
         ).first()
         
         if not student:

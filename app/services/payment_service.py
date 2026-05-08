@@ -2,7 +2,7 @@ import razorpay
 import hashlib
 import hmac
 import json
-from typing import Dict, Any, Optional
+from typing import Dict, Any, List, Optional
 from datetime import datetime
 import logging
 
@@ -16,7 +16,13 @@ class PaymentService:
             auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET)
         )
     
-    def create_order(self, amount: int, currency: str = "INR", receipt: str = None) -> Dict[str, Any]:
+    def create_order(
+        self,
+        amount: int,
+        currency: str = "INR",
+        receipt: str = None,
+        transfers: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         """Create a Razorpay order"""
         try:
             data = {
@@ -24,6 +30,8 @@ class PaymentService:
                 "currency": currency,
                 "receipt": receipt or f"receipt_{datetime.now().timestamp()}"
             }
+            if transfers:
+                data["transfers"] = transfers
             
             order = self.razorpay_client.order.create(data=data)
             

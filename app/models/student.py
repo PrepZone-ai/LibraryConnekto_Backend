@@ -43,6 +43,8 @@ class Student(Base):
     notifications = relationship("StudentNotification", back_populates="student")
     seat_bookings = relationship("SeatBooking", back_populates="student")
     removal_requests = relationship("StudentRemovalRequest", back_populates="student")
+    qr_tokens = relationship("StudentQRToken", back_populates="student")
+    transfer_requests = relationship("StudentTransferRequest", back_populates="student")
 
 class StudentAttendance(Base):
     __tablename__ = "student_attendance"
@@ -55,6 +57,7 @@ class StudentAttendance(Base):
     total_duration = Column(Interval)
     latitude = Column(Float)
     longitude = Column(Float)
+    last_ping_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Relationships

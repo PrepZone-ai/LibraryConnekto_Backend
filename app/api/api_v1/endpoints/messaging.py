@@ -12,6 +12,7 @@ from app.schemas.messaging import (
 )
 from app.models.student import StudentMessage, Student
 from app.models.admin import AdminUser, AdminDetails
+from app.core.cache import invalidate_admin_caches, invalidate_student_dashboard
 
 router = APIRouter()
 
@@ -44,6 +45,7 @@ async def send_student_message(
     db.add(message)
     db.commit()
     db.refresh(message)
+    invalidate_admin_caches(str(message_data.admin_id))
     
     return message
 
@@ -79,6 +81,7 @@ async def send_admin_message(
         
         db.add_all(messages)
         db.commit()
+        invalidate_admin_caches(str(current_admin.user_id))
         
         return messages[0] if messages else None
     else:
@@ -115,6 +118,8 @@ async def send_admin_message(
         db.add(message)
         db.commit()
         db.refresh(message)
+        invalidate_admin_caches(str(current_admin.user_id))
+        invalidate_student_dashboard(str(student.auth_user_id))
         
         return message
 
@@ -235,6 +240,7 @@ async def mark_message_as_read(
     
     message.read = True
     db.commit()
+    invalidate_student_dashboard(str(current_student.auth_user_id))
     
     return {"message": "Message marked as read"}
 

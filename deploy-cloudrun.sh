@@ -9,6 +9,8 @@ set -euo pipefail
 PROJECT_ID=${1:-}
 REGION=${2:-}
 SERVICE=${3:-}
+WORKER_SERVICE="${SERVICE}-worker"
+BEAT_SERVICE="${SERVICE}-beat"
 
 if [ -z "$PROJECT_ID" ] || [ -z "$REGION" ] || [ -z "$SERVICE" ]; then
   echo "Usage: $0 <GCP_PROJECT_ID> <REGION> <SERVICE_NAME>" >&2
@@ -37,7 +39,7 @@ gcloud run deploy "$SERVICE" \
   --cpu 1 \
   --memory 512Mi \
   --max-instances 5 \
-  --set-env-vars "PYTHONDONTWRITEBYTECODE=1,PYTHONUNBUFFERED=1" \
+  --set-env-vars "PYTHONDONTWRITEBYTECODE=1,PYTHONUNBUFFERED=1,RUN_MODE=web,SCHEDULER_OWNER=worker" \
   --set-env-vars "UVICORN_WORKERS=2,UVICORN_LOG_LEVEL=info" \
   # Add your required environment values here, e.g.:
   # --set-env-vars "DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DB_NAME" \
@@ -46,5 +48,29 @@ gcloud run deploy "$SERVICE" \
   # --set-env-vars "SMTP_HOST=...,SMTP_PORT=465,SMTP_USERNAME=...,SMTP_PASSWORD=..." \
   # --set-env-vars "RAZORPAY_KEY_ID=...,RAZORPAY_KEY_SECRET=..."
 
+echo "==> Deploying worker service: ${WORKER_SERVICE}"
+gcloud run deploy "$WORKER_SERVICE" \
+  --image "$IMAGE" \
+  --region "$REGION" \
+  --platform managed \
+  --no-allow-unauthenticated \
+  --cpu 1 \
+  --memory 512Mi \
+  --max-instances 3 \
+  --set-env-vars "PYTHONDONTWRITEBYTECODE=1,PYTHONUNBUFFERED=1,RUN_MODE=worker,SCHEDULER_OWNER=worker" \
+  --set-env-vars "UVICORN_LOG_LEVEL=info,CELERY_WORKER_CONCURRENCY=4"
+
+echo "==> Deploying beat service: ${BEAT_SERVICE}"
+gcloud run deploy "$BEAT_SERVICE" \
+  --image "$IMAGE" \
+  --region "$REGION" \
+  --platform managed \
+  --no-allow-unauthenticated \
+  --cpu 1 \
+  --memory 256Mi \
+  --max-instances 1 \
+  --set-env-vars "PYTHONDONTWRITEBYTECODE=1,PYTHONUNBUFFERED=1,RUN_MODE=beat,SCHEDULER_OWNER=worker" \
+  --set-env-vars "UVICORN_LOG_LEVEL=info"
+
 URL=$(gcloud run services describe "$SERVICE" --region "$REGION" --format 'value(status.url)')
-echo "==> Deployed: $URL"
+echo "==> API Deployed: $URL"

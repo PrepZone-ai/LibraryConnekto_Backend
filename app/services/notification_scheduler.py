@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.services.notification_service import NotificationService
 from app.services.subscription_notification_service import SubscriptionNotificationService
 from app.services.student_removal_service import StudentRemovalService
+from app.services.attendance_service import auto_checkout_stale_attendance_sessions
 from app.models.student import StudentNotification
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ class NotificationScheduler:
         
         self.running = True
         self.task = asyncio.create_task(self._run_scheduler())
-        logger.info("Notification scheduler started")
+        logger.debug("Notification scheduler started")
     
     async def stop(self):
         """Stop the notification scheduler"""
@@ -48,7 +49,7 @@ class NotificationScheduler:
         # Optional initial delay to avoid immediate sends on server boot
         initial_delay = max(0, int(getattr(settings, 'SCHEDULER_INITIAL_DELAY_SECONDS', 0)))
         if initial_delay:
-            logger.info(f"Scheduler initial delay: {initial_delay}s")
+            logger.debug("Scheduler initial delay: %ss", initial_delay)
             await asyncio.sleep(initial_delay)
 
         # Track last dates we ran daily tasks
@@ -68,6 +69,7 @@ class NotificationScheduler:
                 else:
                     await self._check_subscription_expiry()
                 await self._check_overdue_students()
+                await self._check_stale_attendance_sessions()
                 # Sleep based on configured loop interval
                 loop_interval = max(1, int(getattr(settings, 'SCHEDULER_LOOP_INTERVAL_SECONDS', 60)))
                 await asyncio.sleep(loop_interval)
@@ -176,6 +178,17 @@ class NotificationScheduler:
             db.close()
         except Exception as e:
             logger.error(f"Error checking overdue students: {e}")
+
+    async def _check_stale_attendance_sessions(self):
+        """Auto-checkout attendance sessions that stopped sending pings."""
+        try:
+            db = next(get_db())
+            closed = auto_checkout_stale_attendance_sessions(db)
+            if closed > 0:
+                logger.info("Auto checked out %s stale attendance sessions", closed)
+            db.close()
+        except Exception as e:
+            logger.error("Error checking stale attendance sessions: %s", e)
 
 # Global scheduler instance
 notification_scheduler = NotificationScheduler()

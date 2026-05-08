@@ -1,1 +1,83 @@
--NoNewline
+# Environment and secrets (never commit)
+.env
+.env.local
+.env.*.local
+*.env
+cloud.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE and editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+
+# Uploads and user content (runtime)
+uploads/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+
+# Logs and local run artifacts
+*.log
+logs/
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker local overrides (optional; keep if you use docker-compose.override.yml)
+# docker-compose.override.yml
+
+# Alembic (keep versions; ignore local script.py if you add one)
+# alembic/versions/ is tracked
+
+# Jupyter
+.ipynb_checkpoints/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff / linters
+.ruff_cache/

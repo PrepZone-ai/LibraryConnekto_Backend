@@ -1,13 +1,16 @@
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from sqlalchemy import func
+from datetime import datetime, timedelta, timezone, date
 from typing import List, Optional
 from uuid import UUID
 import logging
 
 from app.models.student import Student
 from app.models.subscription import SubscriptionPlan
+from app.models.admin import AdminDetails
 from app.services.notification_service import NotificationService
-from app.services.email_service import EmailService
+from app.utils.subscription_plan_scope import admin_details_id_for_user, apply_plan_shift_filters
+from app.services.email_queue_service import enqueue_email_job
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -16,33 +19,64 @@ class SubscriptionNotificationService:
     def __init__(self, db: Session):
         self.db = db
         self.notification_service = NotificationService(db)
-        self.email_service = EmailService()
-    
+
+    def _subscription_plans_for_student(self, student: Student) -> List[SubscriptionPlan]:
+        lib_id = admin_details_id_for_user(self.db, student.admin_id)
+        if not lib_id:
+            return []
+        library = self.db.query(AdminDetails).filter(AdminDetails.id == lib_id).first()
+        if not library:
+            return []
+        q = self.db.query(SubscriptionPlan).filter(
+            SubscriptionPlan.library_id == lib_id,
+            SubscriptionPlan.is_active == True,
+        )
+        q = apply_plan_shift_filters(
+            q,
+            library,
+            is_shift_student=student.is_shift_student,
+            shift_time=student.shift_time,
+        )
+        return q.all()
+
+    def _renewal_url(self) -> str:
+        base = (getattr(settings, "FRONTEND_BASE_URL", None) or "http://127.0.0.1:5173").rstrip("/")
+        return f"{base}/student/subscription"
+
     def check_and_send_subscription_warnings(self) -> List[dict]:
-        """Check for students with expiring subscriptions and send warnings"""
+        """Notify Active students only on milestone days: 5, 3, and 1 day(s) before expiry (once per calendar day)."""
         results = []
-        
-        # Get students with subscriptions expiring in 5 days or less
-        today = datetime.now().date()
-        warning_date = today + timedelta(days=5)
-        
-        students_to_warn = self.db.query(Student).filter(
-            Student.subscription_end <= warning_date,
-            Student.subscription_end >= today,
-            Student.subscription_status == 'Active'
-        ).all()
-        
+        today: date = datetime.now(timezone.utc).date()
+        milestone_end_dates = [today + timedelta(days=d) for d in (5, 3, 1)]
+
+        students_to_warn = (
+            self.db.query(Student)
+            .filter(
+                Student.subscription_status == "Active",
+                func.date(Student.subscription_end).in_(milestone_end_dates),
+            )
+            .all()
+        )
+
+        renew_url = self._renewal_url()
+
         for student in students_to_warn:
+            end_d = (
+                student.subscription_end.date()
+                if student.subscription_end and hasattr(student.subscription_end, "date")
+                else today
+            )
+            days_left = (end_d - today).days
             try:
-                days_left = (student.subscription_end.date() - today).days
-                
-                # Send in-app notification
-                notification_result = self._send_subscription_warning_notification(student, days_left)
+                # Send in-app notification (includes renew / pay link)
+                notification_result = self._send_subscription_warning_notification(
+                    student, days_left, renew_url
+                )
                 
                 email_sent = False
                 if getattr(settings, 'SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED', False):
                     # Send email only if explicitly enabled
-                    email_sent = self._send_subscription_warning_email(student, days_left)
+                    email_sent = self._send_subscription_warning_email(student, days_left, renew_url)
                 
                 results.append({
                     'student_id': str(student.id),
@@ -70,29 +104,36 @@ class SubscriptionNotificationService:
     def check_and_send_expired_notifications(self) -> List[dict]:
         """Check for students with expired subscriptions and send notifications"""
         results = []
-        
-        today = datetime.now().date()
-        
+        now = datetime.now(timezone.utc)
+        today = now.date()
+        renew_url = self._renewal_url()
+
         expired_students = self.db.query(Student).filter(
-            Student.subscription_end < today,
+            Student.subscription_end < now,
             Student.subscription_status == 'Active'
         ).all()
         
         for student in expired_students:
+            days_expired = max(
+                0,
+                (today - student.subscription_end.date()).days
+                if student.subscription_end
+                else 0,
+            )
             try:
-                days_expired = (today - student.subscription_end.date()).days
-                
                 # Update subscription status
                 student.subscription_status = 'Expired'
                 self.db.commit()
                 
                 # Send in-app notification
-                notification_result = self._send_subscription_expired_notification(student, days_expired)
+                notification_result = self._send_subscription_expired_notification(
+                    student, days_expired, renew_url
+                )
                 
                 email_sent = False
                 if getattr(settings, 'SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED', False):
                     # Send email only if explicitly enabled
-                    email_sent = self._send_subscription_expired_email(student, days_expired)
+                    email_sent = self._send_subscription_expired_email(student, days_expired, renew_url)
                 
                 results.append({
                     'student_id': str(student.id),
@@ -117,20 +158,32 @@ class SubscriptionNotificationService:
         
         return results
     
-    def _send_subscription_warning_notification(self, student: Student, days_left: int) -> bool:
+    def _send_subscription_warning_notification(
+        self, student: Student, days_left: int, renew_url: str
+    ) -> bool:
         """Send subscription warning notification to student"""
         try:
+            pay_line = f" Renew or pay online here: {renew_url}"
             if days_left == 1:
-                title = "⚠️ Subscription Expires Tomorrow!"
-                message = f"Your library subscription expires tomorrow. Please renew to continue accessing the library services."
+                title = "⚠️ Subscription — last day before expiry"
+                message = (
+                    "Your library subscription ends tomorrow. Choose a plan and pay to extend it."
+                    + pay_line
+                )
                 priority = "urgent"
-            elif days_left <= 3:
-                title = f"⚠️ Subscription Expires in {days_left} Days"
-                message = f"Your library subscription expires in {days_left} days. Please renew soon to avoid service interruption."
+            elif days_left == 3:
+                title = "⚠️ Subscription expires in 3 days"
+                message = (
+                    "Your library subscription expires in 3 days. Renew now to avoid interruption."
+                    + pay_line
+                )
                 priority = "high"
             else:
-                title = f"📚 Subscription Expires in {days_left} Days"
-                message = f"Your library subscription expires in {days_left} days. Consider renewing to continue your studies."
+                title = "📚 Subscription expires in 5 days"
+                message = (
+                    "Your library subscription expires in 5 days. You can renew anytime."
+                    + pay_line
+                )
                 priority = "medium"
             
             notification = self.notification_service.create_system_notification(
@@ -147,11 +200,16 @@ class SubscriptionNotificationService:
             logger.error(f"Failed to send subscription warning notification: {e}")
             return False
     
-    def _send_subscription_expired_notification(self, student: Student, days_expired: int) -> bool:
+    def _send_subscription_expired_notification(
+        self, student: Student, days_expired: int, renew_url: str
+    ) -> bool:
         """Send subscription expired notification to student"""
         try:
             title = "❌ Subscription Expired"
-            message = f"Your library subscription has expired. Please renew immediately to restore access to library services."
+            message = (
+                "Your library subscription has expired. Renew with a plan to restore access. "
+                f"If you do not renew, the library may request your removal. Pay here: {renew_url}"
+            )
             priority = "urgent"
             
             notification = self.notification_service.create_system_notification(
@@ -168,19 +226,17 @@ class SubscriptionNotificationService:
             logger.error(f"Failed to send subscription expired notification: {e}")
             return False
     
-    def _send_subscription_warning_email(self, student: Student, days_left: int) -> bool:
+    def _send_subscription_warning_email(
+        self, student: Student, days_left: int, renew_url: str
+    ) -> bool:
         """Send subscription warning email to student"""
         try:
-            # Get available subscription plans for the student's library
-            subscription_plans = self.db.query(SubscriptionPlan).filter(
-                SubscriptionPlan.library_id == student.admin_id,
-                SubscriptionPlan.is_active == True
-            ).all()
-            
+            subscription_plans = self._subscription_plans_for_student(student)
+
             if days_left == 1:
                 subject = "⚠️ Your Library Subscription Expires Tomorrow!"
                 urgency = "URGENT"
-            elif days_left <= 3:
+            elif days_left == 3:
                 subject = f"⚠️ Your Library Subscription Expires in {days_left} Days"
                 urgency = "HIGH PRIORITY"
             else:
@@ -491,7 +547,7 @@ class SubscriptionNotificationService:
                         </div>
                         
                         <div style="text-align: center;">
-                            <a href="https://your-library-app.com/student/subscription" class="cta-button">
+                            <a href="{renew_url}" class="cta-button">
                                 🔄 Renew Your Subscription Now
                             </a>
                         </div>
@@ -560,29 +616,29 @@ class SubscriptionNotificationService:
             </html>
             """
             
-            # Send email
-            result = self.email_service.send_email(
+            enqueue_email_job(
+                db=self.db,
+                email_type="generic",
                 to_email=student.email,
-                subject=subject,
-                body="Please view this email in HTML format for the best experience.",
-                html_body=html_content
+                payload={
+                    "subject": subject,
+                    "body": "Please view this email in HTML format for the best experience.",
+                    "html_body": html_content,
+                },
             )
-            
-            return result.get("success", False)
+            return True
             
         except Exception as e:
             logger.error(f"Failed to send subscription warning email: {e}")
             return False
     
-    def _send_subscription_expired_email(self, student: Student, days_expired: int) -> bool:
+    def _send_subscription_expired_email(
+        self, student: Student, days_expired: int, renew_url: str
+    ) -> bool:
         """Send subscription expired email to student"""
         try:
-            # Get available subscription plans for the student's library
-            subscription_plans = self.db.query(SubscriptionPlan).filter(
-                SubscriptionPlan.library_id == student.admin_id,
-                SubscriptionPlan.is_active == True
-            ).all()
-            
+            subscription_plans = self._subscription_plans_for_student(student)
+
             subject = "❌ Your Library Subscription Has Expired"
             plans_html = self._generate_plans_html(subscription_plans)
             
@@ -888,7 +944,7 @@ class SubscriptionNotificationService:
                         </div>
                         
                         <div style="text-align: center;">
-                            <a href="https://your-library-app.com/student/subscription" class="cta-button">
+                            <a href="{renew_url}" class="cta-button">
                                 🔄 Renew Your Subscription Now
                             </a>
                         </div>
@@ -961,15 +1017,17 @@ class SubscriptionNotificationService:
             </html>
             """
             
-            # Send email
-            result = self.email_service.send_email(
+            enqueue_email_job(
+                db=self.db,
+                email_type="generic",
                 to_email=student.email,
-                subject=subject,
-                body="Please view this email in HTML format for the best experience.",
-                html_body=html_content
+                payload={
+                    "subject": subject,
+                    "body": "Please view this email in HTML format for the best experience.",
+                    "html_body": html_content,
+                },
             )
-            
-            return result.get("success", False)
+            return True
             
         except Exception as e:
             logger.error(f"Failed to send subscription expired email: {e}")
@@ -982,15 +1040,18 @@ class SubscriptionNotificationService:
         
         plans_html = ""
         for plan in plans:
-            features = plan.features.split(',') if plan.features else []
             features_html = ""
-            for feature in features:
-                features_html += f"<li>{feature.strip()}</li>"
+            if getattr(plan, "is_shift_plan", False) and getattr(plan, "shift_time", None):
+                features_html += f"<li>Shift: {plan.shift_time}</li>"
+            if getattr(plan, "discounted_amount", None):
+                features_html += (
+                    f"<li>Special price: ₹{plan.discounted_amount} (Regular: ₹{plan.amount})</li>"
+                )
             
             plans_html += f"""
             <div class="plan-card">
-                <div class="plan-title">{plan.plan_name}</div>
-                <div class="plan-price">₹{plan.price}/month</div>
+                <div class="plan-title">{plan.months} Month{'s' if plan.months > 1 else ''}</div>
+                <div class="plan-price">₹{plan.discounted_amount or plan.amount}</div>
                 <ul class="plan-features">
                     {features_html}
                 </ul>

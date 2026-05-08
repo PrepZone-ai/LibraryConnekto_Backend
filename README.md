@@ -1,17 +1,17 @@
 # 📚 LibraryConnekto Backend
 
-**LibraryConnekto Backend** is a production-ready backend system designed to power a smart library and student workspace platform. It includes authentication, student management, admin features, seat booking, payments, notifications, and more.
+**LibraryConnekto Backend** powers the Library Connekto platform with authentication, student/admin management, seat booking, payments, notifications, and automation.
 
 ## 🚀 Features
 
-*   **Authentication:** JWT Authentication (Admin + Student)
-*   **Student Management:** Student profiles, attendance, tasks, exams
-*   **Admin:** Admin dashboard APIs
-*   **Booking:** Seat booking system
-*   **Growth:** Referral system
-*   **Payments:** Razorpay payments integration
-*   **Notifications:** Email notifications
-*   **Automation:** Scheduler-based automated jobs
+*   **Authentication:** JWT for Admin + Student
+*   **Student Management:** Profiles, attendance, tasks, exams
+*   **Admin:** Dashboard and management APIs
+*   **Booking:** Seat booking flows
+*   **Payments:** Razorpay integration + webhooks
+*   **Messaging:** Email notifications and delivery logs
+*   **Automation:** Scheduler-driven notifications and checks
+*   **Transfers:** QR transfer flows and seat reuse
 *   **Tech:** PostgreSQL + SQLAlchemy + Alembic
 *   **DevOps:** Docker + Cloud Run deployment
 
@@ -30,15 +30,19 @@
 ## 📁 Project Structure
 
 ```text
-Backend/
+LibraryConnekto_Backend/
 ├── main.py
 ├── app/
 │   ├── api/                # API routers
 │   ├── auth/               # JWT utilities
-│   ├── core/               # Config & environment settings
+│   ├── core/               # Config, logging, cache, sentry
+│   ├── middleware/         # Security and rate limiting
 │   ├── models/             # SQLAlchemy models
 │   ├── schemas/            # Pydantic schemas
-│   ├── services/           # Email, payments, notifications
+│   ├── services/           # Email, payments, notifications, transfers
+│   ├── tasks/              # Background jobs
+│   ├── utils/              # Shared utilities
+│   ├── celery_app.py
 │   └── database.py         # DB session & engine
 ├── alembic/                # Migration scripts
 ├── alembic.ini
@@ -48,25 +52,22 @@ Backend/
 ├── deploy-cloudrun.sh
 ├── deploy-cloudrun.ps1
 ├── cloudbuild.yaml
-├── environment.template
 └── uploads/                # Static uploads (ignored by Git)
-⚙️ Setup Instructions
-1. Install dependencies
-code
-Bash
-download
-content_copy
-expand_less
+```
+
+## ⚙️ Setup Instructions
+
+### 1) Install dependencies
+
+```bash
 pip install -r requirements.txt
-2. Setup environment
+```
 
-Create a .env file in the root directory:
+### 2) Configure environment
 
-code
-Ini
-download
-content_copy
-expand_less
+Create a `.env` file in the root directory. For the full list of settings, see [app/core/config.py](LibraryConnekto_Backend/app/core/config.py).
+
+```ini
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:5432/DBNAME
 
 SECRET_KEY=your-secret
@@ -75,8 +76,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES=30
 
 ALLOWED_ORIGINS=http://localhost:3000
 
-UPLOAD_DIR=uploads
-MAX_FILE_SIZE=10485760
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
 
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
@@ -85,61 +87,41 @@ SMTP_PASSWORD=
 
 RAZORPAY_KEY_ID=
 RAZORPAY_KEY_SECRET=
+```
 
-EMAIL_SCHEDULER_ENABLED=true
-SCHEDULER_INITIAL_DELAY_SECONDS=60
-SCHEDULER_LOOP_INTERVAL_SECONDS=60
-SUBSCRIPTION_CHECKS_DAILY_ENABLED=true
-SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED=false
-3. Run database migrations
+### 3) Run database migrations
 
-download
-content_copy
-expand_less
+```bash
 alembic upgrade head
-4. Start the server
+```
 
-download
-content_copy
-expand_less
+### 4) Start the server
+
+```bash
 uvicorn main:app --reload
-
-Access the application:
+```
 
 API Docs: http://localhost:8000/docs
 
 Health Check: http://localhost:8000/health
 
-🐳 Docker (Optional)
+## 🐳 Docker (Optional)
 
-Build the image:
-download
-content_copy
-expand_less
+```bash
 docker build -t libraryconnekto-backend .
-
-Run the container:
-
-download
-content_copy
-expand_less
 docker run -p 8080:8080 --env-file .env libraryconnekto-backend
-☁️ Deploy to Google Cloud Run
+```
+
+## ☁️ Deploy to Google Cloud Run
 
 Linux/Mac:
 
-download
-content_copy
-expand_less
+```bash
 ./deploy-cloudrun.sh
+```
 
 Windows:
 
-download
-content_copy
-expand_less
+```powershell
 .\deploy-cloudrun.ps1 -ProjectId <ID> -Region <REGION> -Service <NAME>
-
-download
-content_copy
-expand_less
+```

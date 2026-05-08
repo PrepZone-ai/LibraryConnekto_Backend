@@ -1,6 +1,6 @@
 import razorpay
 from app.core.config import settings
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,14 @@ class RazorpayService:
             auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET)
         )
     
-    def create_order(self, amount: int, currency: str = "INR", receipt: str = None, notes: Dict[str, Any] = None) -> Dict[str, Any]:
+    def create_order(
+        self,
+        amount: int,
+        currency: str = "INR",
+        receipt: str = None,
+        notes: Dict[str, Any] = None,
+        transfers: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         """
         Create a Razorpay order
         
@@ -20,6 +27,7 @@ class RazorpayService:
             currency: Currency code (default: INR)
             receipt: Receipt ID for the order
             notes: Additional notes for the order
+            transfers: Optional Route transfers (e.g. full settlement to a linked account)
             
         Returns:
             Dict containing order details
@@ -31,6 +39,8 @@ class RazorpayService:
                 "receipt": receipt or f"receipt_{receipt}",
                 "notes": notes or {}
             }
+            if transfers:
+                order_data["transfers"] = transfers
             
             order = self.client.order.create(data=order_data)
             logger.info(f"Razorpay order created: {order['id']}")

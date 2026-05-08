@@ -19,3 +19,10 @@ pytest
 pytest-asyncio
 razorpay
 openpyxl
+slowapi==0.1.9
+filetype>=1.2.0
+python-json-logger==2.0.7
+sentry-sdk[fastapi]==2.0.0
+redis==5.0.1
+hiredis==2.2.3
+celery==5.4.0

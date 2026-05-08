@@ -67,6 +67,9 @@ jobs:
           SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED: "${{ secrets.SUBSCRIPTION_EMAIL_FROM_SCHEDULER_ENABLED }}"
           PYTHONDONTWRITEBYTECODE: "1"
           PYTHONUNBUFFERED: "1"
+          REDIS_HOST: "${{ secrets.REDIS_HOST }}"
+          REDIS_PORT: "${{ secrets.REDIS_PORT }}"
+          REDIS_PASSWORD: "${{ secrets.REDIS_PASSWORD }}"
           EOF
 
       - name: Deploy to Cloud Run

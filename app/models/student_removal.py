@@ -12,6 +12,7 @@ class RemovalRequestStatus(enum.Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
+    CASH_RECEIVED = "cash_received"
 
 class StudentRemovalRequest(Base):
     __tablename__ = "student_removal_requests"

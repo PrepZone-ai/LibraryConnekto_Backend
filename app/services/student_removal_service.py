@@ -1,17 +1,19 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 import logging
 
 from app.models.student_removal import StudentRemovalRequest, RemovalRequestStatus
 from app.models.student import Student
-from app.models.admin import AdminUser
+from app.models.admin import AdminUser, AdminDetails
+from app.models.booking import SeatBooking
 from app.schemas.student_removal import (
-    StudentRemovalRequestCreate, 
+    StudentRemovalRequestCreate,
     StudentRemovalRequestResponse,
-    StudentRemovalRequestUpdate
+    StudentRemovalRequestUpdate,
+    RemovalRequestStatus as RemovalRequestStatusPayload,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,6 +22,10 @@ class StudentRemovalService:
     def __init__(self, db: Session):
         self.db = db
     
+    def _admin_pk_for_student(self, student: Student) -> Optional[UUID]:
+        admin_user = self.db.query(AdminUser).filter(AdminUser.user_id == student.admin_id).first()
+        return admin_user.id if admin_user else None
+
     def create_removal_request(self, request_data: StudentRemovalRequestCreate) -> StudentRemovalRequest:
         """Create a new student removal request"""
         try:
@@ -155,7 +161,42 @@ class StudentRemovalService:
                 return None
             
             # Update request
-            request.status = update_data.status
+            if update_data.status == RemovalRequestStatusPayload.CASH_RECEIVED:
+                from decimal import Decimal
+                from app.services.subscription_cash_revenue_service import (
+                    apply_cash_subscription_extension,
+                )
+
+                if not update_data.plan_id:
+                    raise ValueError("plan_id is required when recording cash payment")
+                student = self.db.query(Student).filter(Student.id == request.student_id).first()
+                if not student:
+                    raise ValueError("Student not found")
+                library = (
+                    self.db.query(AdminDetails)
+                    .filter(AdminDetails.user_id == student.admin_id)
+                    .first()
+                )
+                if not library:
+                    raise ValueError("Library not found for student")
+                amt = (
+                    Decimal(str(update_data.amount))
+                    if update_data.amount is not None
+                    else None
+                )
+                apply_cash_subscription_extension(
+                    self.db,
+                    student=student,
+                    library=library,
+                    plan_id=update_data.plan_id,
+                    amount_override=amt,
+                    purpose="Subscription renewal (cash via removal request)",
+                    payment_reference="cash_subscription_renewal_removal_request",
+                )
+                request.status = RemovalRequestStatus.CASH_RECEIVED
+            else:
+                request.status = RemovalRequestStatus(update_data.status.value)
+
             request.admin_notes = update_data.admin_notes
             request.processed_by = processed_by
             request.processed_at = datetime.now()
@@ -163,9 +204,15 @@ class StudentRemovalService:
             self.db.commit()
             self.db.refresh(request)
             
-            # If approved, remove the student
-            if update_data.status == RemovalRequestStatus.APPROVED:
+            if update_data.status == RemovalRequestStatusPayload.APPROVED:
                 self._remove_student(request.student_id)
+            elif update_data.status == RemovalRequestStatusPayload.CASH_RECEIVED:
+                from app.core.cache import invalidate_admin_caches, invalidate_student_dashboard
+
+                st = self.db.query(Student).filter(Student.id == request.student_id).first()
+                if st:
+                    invalidate_student_dashboard(str(st.auth_user_id))
+                    invalidate_admin_caches(str(st.admin_id))
             
             logger.info(f"Updated removal request {request_id} to status {update_data.status}")
             
@@ -189,22 +236,23 @@ class StudentRemovalService:
             student.is_active = False
             student.subscription_status = "Removed"
             student.removed_at = datetime.now()
-            
-            # Cancel any active bookings
-            from app.models.booking import Booking
-            active_bookings = self.db.query(Booking).filter(
-                and_(
-                    Booking.student_id == student_id,
-                    Booking.status.in_(["confirmed", "pending"])
-                )
+
+            from app.services.library_seat_reuse_service import (
+                record_freed_seats_for_removed_student,
+                invalidate_seat_caches,
+            )
+
+            record_freed_seats_for_removed_student(self.db, student)
+
+            active_bookings = self.db.query(SeatBooking).filter(
+                SeatBooking.student_id == student.auth_user_id,
+                SeatBooking.status.in_(["pending", "approved", "active"]),
             ).all()
-            
             for booking in active_bookings:
                 booking.status = "cancelled"
-                booking.cancelled_at = datetime.now()
-                booking.cancellation_reason = "Student removed from library"
-            
+
             self.db.commit()
+            invalidate_seat_caches(self.db, student)
             
             logger.info(f"Successfully removed student {student_id} from library")
             return True
@@ -238,8 +286,10 @@ class StudentRemovalService:
             self.db.rollback()
             raise
     
-    def get_removal_stats(self, admin_id: Optional[UUID] = None) -> Dict[str, int]:
-        """Get removal request statistics"""
+    def get_removal_stats(
+        self, admin_id: Optional[UUID] = None, admin_user_id: Optional[UUID] = None
+    ) -> Dict[str, int]:
+        """Get removal request statistics. admin_id = AdminUser.id; admin_user_id = AdminUser.user_id for Student scope."""
         try:
             query = self.db.query(StudentRemovalRequest)
             
@@ -250,23 +300,25 @@ class StudentRemovalService:
             pending_requests = query.filter(StudentRemovalRequest.status == RemovalRequestStatus.PENDING).count()
             approved_requests = query.filter(StudentRemovalRequest.status == RemovalRequestStatus.APPROVED).count()
             rejected_requests = query.filter(StudentRemovalRequest.status == RemovalRequestStatus.REJECTED).count()
-            
-            # Count overdue students (expired subscription, no payment in 2+ days)
-            overdue_cutoff = datetime.now() - timedelta(days=2)
-            overdue_students = self.db.query(Student).filter(
-                and_(
-                    Student.admin_id == admin_id if admin_id else True,
-                    Student.subscription_end < overdue_cutoff,
-                    Student.subscription_status == "Expired",
-                    Student.is_active == True
-                )
+            cash_received_requests = query.filter(
+                StudentRemovalRequest.status == RemovalRequestStatus.CASH_RECEIVED
             ).count()
+            
+            overdue_q = self.db.query(Student).filter(
+                Student.subscription_end < datetime.now(timezone.utc),
+                Student.subscription_status == "Expired",
+                Student.is_active == True,
+            )
+            if admin_user_id:
+                overdue_q = overdue_q.filter(Student.admin_id == admin_user_id)
+            overdue_students = overdue_q.count()
             
             return {
                 "total_requests": total_requests,
                 "pending_requests": pending_requests,
                 "approved_requests": approved_requests,
                 "rejected_requests": rejected_requests,
+                "cash_received_requests": cash_received_requests,
                 "overdue_students": overdue_students
             }
             
@@ -275,23 +327,20 @@ class StudentRemovalService:
             raise
     
     def check_and_create_removal_requests(self) -> int:
-        """Check for expired subscriptions and create removal requests"""
+        """Create removal requests for students whose subscription has expired and is unpaid (no renewal)."""
         try:
-            # Find students with expired subscriptions (2+ days overdue)
-            overdue_cutoff = datetime.now() - timedelta(days=2)
-            
+            now = datetime.now(timezone.utc)
             overdue_students = self.db.query(Student).filter(
                 and_(
-                    Student.subscription_end < overdue_cutoff,
+                    Student.subscription_end < now,
                     Student.subscription_status == "Expired",
-                    Student.is_active == True
+                    Student.is_active == True,
                 )
             ).all()
             
             created_count = 0
             
             for student in overdue_students:
-                # Check if removal request already exists
                 existing_request = self.db.query(StudentRemovalRequest).filter(
                     and_(
                         StudentRemovalRequest.student_id == student.id,
@@ -300,16 +349,18 @@ class StudentRemovalService:
                 ).first()
                 
                 if not existing_request:
-                    # Calculate days overdue
-                    days_overdue = (datetime.now() - student.subscription_end).days
+                    admin_pk = self._admin_pk_for_student(student)
+                    if not admin_pk:
+                        logger.warning("Skipping removal request: no admin row for student %s", student.id)
+                        continue
+                    days_overdue = max(0, (now - student.subscription_end).days)
                     
-                    # Create removal request
                     request_data = StudentRemovalRequestCreate(
                         student_id=student.id,
-                        admin_id=student.admin_id,
-                        reason="Subscription expired and payment not received within 2 days",
+                        admin_id=admin_pk,
+                        reason="Subscription expired — renew online or pay at library; otherwise approve removal.",
                         subscription_end_date=student.subscription_end,
-                        days_overdue=f"{days_overdue} days overdue"
+                        days_overdue=f"{days_overdue} days overdue" if days_overdue else "expires today",
                     )
                     
                     self.create_removal_request(request_data)

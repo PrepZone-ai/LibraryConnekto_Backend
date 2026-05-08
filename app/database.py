@@ -3,7 +3,7 @@ from sqlalchemy_utils import database_exists, create_database
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import QueuePool
 import asyncpg
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from app.core.config import settings
@@ -15,8 +15,13 @@ Base = declarative_base()
 try:
     engine = create_engine(
         settings.DATABASE_URL,
+        poolclass=QueuePool,
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
         pool_pre_ping=True,
-        echo=False  # Set to True for SQL debugging
+        pool_recycle=settings.DB_POOL_RECYCLE,
+        pool_timeout=30,
+        echo=False,  # Set to True for SQL debugging
     )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 except Exception as e:
@@ -28,7 +33,11 @@ except Exception as e:
 try:
     async_engine = create_async_engine(
         settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
-        echo=False
+        pool_size=settings.DB_POOL_SIZE,
+        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_pre_ping=True,
+        pool_recycle=settings.DB_POOL_RECYCLE,
+        echo=False,
     )
     AsyncSessionLocal = sessionmaker(
         async_engine, class_=AsyncSession, expire_on_commit=False
@@ -47,9 +56,7 @@ def ensure_database_exists():
     try:
         if not database_exists(settings.DATABASE_URL):
             create_database(settings.DATABASE_URL)
-            print(f"Database created: {settings.DATABASE_URL}")
-        else:
-            print(f"Database already exists: {settings.DATABASE_URL}")
+        # DB exists or was created; no need to log on every startup
     except Exception as e:
         print(f"[DB ERROR] Could not check or create database: {e}")
 
@@ -61,6 +68,7 @@ def init_db():
         from app.models.booking import SeatBooking
         from app.models.referral import ReferralCode, Referral
         from app.models.subscription import SubscriptionPlan
+        from app.models.email_delivery_log import EmailDeliveryLog
         # Only create tables, do not try to create the database itself for cloud DBs
         if engine is not None:
             Base.metadata.create_all(bind=engine)

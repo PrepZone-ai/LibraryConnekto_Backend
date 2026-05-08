@@ -1,7 +1,15 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.utils import formataddr
 from app.core.config import settings
+from app.services.email_templates import (
+    cta_button_block,
+    fallback_link_block,
+    notice_box,
+    standard_footer_plain,
+    standard_transactional_shell,
+)
 import logging
 from typing import Optional, Dict, Any
 import asyncio
@@ -17,6 +25,7 @@ class EmailService:
         self.smtp_port = settings.SMTP_PORT
         self.smtp_username = settings.SMTP_USERNAME
         self.smtp_password = settings.SMTP_PASSWORD
+        self.smtp_from_name = getattr(settings, "SMTP_FROM_NAME", "LibraryConnekto")
         self.is_configured = bool(self.smtp_host and self.smtp_username and self.smtp_password)
     
     def send_email(self, to_email: str, subject: str, body: str, html_body: Optional[str] = None, max_retries: int = 3) -> Dict[str, Any]:
@@ -44,7 +53,7 @@ class EmailService:
         # Create message once (outside retry loop for efficiency)
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
-        msg['From'] = self.smtp_username
+        msg['From'] = formataddr((self.smtp_from_name, self.smtp_username))
         msg['To'] = to_email
         
         # Add text and HTML parts
@@ -171,8 +180,8 @@ class EmailService:
         """Send password setup email to student with mobile number as initial password"""
         subject = f" Welcome to {library_name} - Set Your Password"
         
-        # Create setup URL
-        setup_url = f"{base_url}api/v1/student/set-password?token={token}"
+        # Student opens the SPA to set password (not the JSON API route)
+        setup_url = f"{settings.FRONTEND_BASE_URL}/student/set-password?token={token}"
         
         # Text version
         text_body = f"""
@@ -679,59 +688,114 @@ Happy learning!
         verify_url = f"{base_url}api/v1/auth/admin/verify-email?token={token}"
         
         text_body = f"""
-Hello!
+Hello,
 
-Welcome to the Library Management System!
+Welcome to the Library Management System (Library Connekto).
 
-To verify your email address, please click the following link:
+Please verify your email address by opening this link in your browser:
 {verify_url}
 
-If the link doesn't work, copy and paste it into your browser.
+If you did not create an administrator account, you can ignore this message.
 
 Best regards,
 Library Management Team
+{standard_footer_plain()}
         """
-        
-        html_body = f"""
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>Verify Your Email</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; line-height: 1.6; color: #333; }}
-        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
-        .header {{ background-color: #f8f9fa; padding: 20px; text-align: center; border-radius: 5px; }}
-        .content {{ padding: 20px; }}
-        .button {{ display: inline-block; padding: 12px 24px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px; margin: 20px 0; }}
-        .footer {{ margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; font-size: 12px; color: #666; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h2>Welcome to Library Management System!</h2>
-        </div>
-        <div class="content">
-            <p>Hello!</p>
-            <p>Welcome to the Library Management System!</p>
-            
-            <p>To verify your email address, please click the button below:</p>
-            
-            <a href="{verify_url}" class="button">Verify Email</a>
-            
-            <p>If the button doesn't work, copy and paste this link into your browser:</p>
-            <p style="word-break: break-all; color: #007bff;">{verify_url}</p>
-        </div>
-        <div class="footer">
-            <p>Best regards,<br>Library Management Team</p>
-        </div>
-    </div>
-</body>
-</html>
-        """
+
+        main_html = f"""
+<p style="margin:0 0 16px 0;">Hello,</p>
+<p style="margin:0 0 16px 0;">Welcome to the <strong>Library Management System</strong>. You are almost ready to manage your library—please confirm your email address to activate your administrator account.</p>
+<p style="margin:0 0 4px 0;">Use the button below to verify your email:</p>
+{cta_button_block(verify_url, "Verify email address")}
+{fallback_link_block(verify_url)}
+{notice_box("<strong>Security:</strong> This link is personal to your account. Do not forward or share it. If you did not sign up, you can safely ignore this email.")}
+<p style="margin:28px 0 0 0;font-size:15px;color:#2d3748;">Best regards,<br><strong>Library Management Team</strong></p>
+"""
+        html_body = standard_transactional_shell(
+            document_title="Verify your email · Library Connekto",
+            preheader="Confirm your admin email to activate your Library Connekto account.",
+            header_badge="Library Connekto",
+            headline="Verify your email address",
+            tagline="One step left to activate your administrator account.",
+            main_inner_html=main_html,
+        )
         
         return self.send_email_with_retry(email, subject, text_body, html_body, max_retries=3, email_type="admin_verification")
+
+    def send_admin_password_reset_email(self, email: str, reset_url: str) -> Dict[str, Any]:
+        """Password reset link for admin accounts."""
+        subject = "Reset your Library Connekto admin password"
+        text_body = f"""
+Hello,
+
+We received a request to reset the password for your Library Connekto administrator account.
+
+Open this link in your browser to choose a new password:
+{reset_url}
+
+If you did not request a reset, you can ignore this email. Your password will stay the same.
+
+{standard_footer_plain()}
+"""
+        main_html = f"""
+<p style="margin:0 0 16px 0;">Hello,</p>
+<p style="margin:0 0 16px 0;">We received a request to reset the password for your <strong>Library Connekto</strong> administrator account. Use the button below to choose a new password.</p>
+{cta_button_block(reset_url, "Reset password")}
+{fallback_link_block(reset_url)}
+{notice_box("<strong>Security:</strong> If you did not request this reset, ignore this email. The link is personal—do not forward it.")}
+<p style="margin:28px 0 0 0;font-size:15px;color:#2d3748;">Best regards,<br><strong>Library Connekto</strong></p>
+"""
+        html_body = standard_transactional_shell(
+            document_title="Reset your password · Library Connekto",
+            preheader="Reset your Library Connekto admin password.",
+            header_badge="Library Connekto",
+            headline="Reset your password",
+            tagline="Choose a new password for your administrator account.",
+            main_inner_html=main_html,
+        )
+        return self.send_email_with_retry(
+            email, subject, text_body, html_body, max_retries=3, email_type="admin_password_reset"
+        )
+
+    def send_student_password_reset_email(
+        self, email: str, student_id: str, library_name: str, reset_url: str
+    ) -> Dict[str, Any]:
+        """Password reset link for student accounts."""
+        subject = f"Reset your password — {library_name}"
+        text_body = f"""
+Hello,
+
+We received a request to reset the password for your student account at {library_name}.
+
+Student ID: {student_id}
+
+Open this link to choose a new password:
+{reset_url}
+
+If you did not request this, you can ignore this email.
+
+{standard_footer_plain()}
+"""
+        main_html = f"""
+<p style="margin:0 0 16px 0;">Hello,</p>
+<p style="margin:0 0 16px 0;">We received a request to reset your password for <strong>{library_name}</strong>.</p>
+<p style="margin:0 0 16px 0;"><strong>Student ID:</strong> {student_id}</p>
+{cta_button_block(reset_url, "Reset password")}
+{fallback_link_block(reset_url)}
+{notice_box("<strong>Security:</strong> If you did not request this, ignore this email.")}
+<p style="margin:28px 0 0 0;font-size:15px;color:#2d3748;">Best regards,<br><strong>{library_name}</strong></p>
+"""
+        html_body = standard_transactional_shell(
+            document_title=f"Reset your password · {library_name}",
+            preheader=f"Reset your student password for {library_name}.",
+            header_badge="Student account",
+            headline="Reset your password",
+            tagline=f"{library_name} · Library Connekto",
+            main_inner_html=main_html,
+        )
+        return self.send_email_with_retry(
+            email, subject, text_body, html_body, max_retries=3, email_type="student_password_reset"
+        )
     
     def send_payment_confirmation_email(self, email: str, student_name: str, library_name: str, 
                                       plan_name: str, amount: float, payment_id: str, 

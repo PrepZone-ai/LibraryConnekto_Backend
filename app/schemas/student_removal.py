@@ -9,6 +9,7 @@ class RemovalRequestStatus(str, Enum):
     APPROVED = "approved"
     REJECTED = "rejected"
     CANCELLED = "cancelled"
+    CASH_RECEIVED = "cash_received"
 
 class StudentRemovalRequestCreate(BaseModel):
     student_id: UUID
@@ -43,6 +44,8 @@ class StudentRemovalRequestResponse(BaseModel):
 class StudentRemovalRequestUpdate(BaseModel):
     status: RemovalRequestStatus
     admin_notes: Optional[str] = None
+    plan_id: Optional[UUID] = None
+    amount: Optional[float] = None
 
 class StudentRemovalRequestList(BaseModel):
     requests: List[StudentRemovalRequestResponse]
@@ -56,4 +59,5 @@ class StudentRemovalStats(BaseModel):
     pending_requests: int
     approved_requests: int
     rejected_requests: int
+    cash_received_requests: int = 0
     overdue_students: int

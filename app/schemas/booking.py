@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from datetime import datetime
 from uuid import UUID
 from decimal import Decimal
@@ -95,6 +95,8 @@ class LibraryInfo(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     distance: Optional[float] = None
-    
+    has_shift_system: bool = False
+    shift_timings: Optional[List[str]] = None
+
     class Config:
         from_attributes = True

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, model_validator
 from typing import Optional
 from datetime import datetime
 
@@ -22,6 +22,9 @@ class AdminSignUp(BaseModel):
 class AdminSignIn(BaseModel):
     email: EmailStr
     password: str
+
+class AdminResendVerificationRequest(BaseModel):
+    email: EmailStr
 
 class StudentSignUp(BaseModel):
     email: EmailStr
@@ -56,6 +59,28 @@ class PasswordChange(BaseModel):
 class PasswordReset(BaseModel):
     email: EmailStr
 
+
+class StudentForgotPasswordRequest(BaseModel):
+    """Provide student_id (e.g. LIBR25001) and/or email; at least one required."""
+
+    student_id: Optional[str] = None
+    email: Optional[EmailStr] = None
+
+    @model_validator(mode="after")
+    def require_identifier(self):
+        sid = (self.student_id or "").strip()
+        em = ""
+        if self.email is not None:
+            em = str(self.email).strip()
+        if not sid and not em:
+            raise ValueError("Provide student_id or email")
+        return self
+
+
+class AdminResetPasswordConfirm(BaseModel):
+    token: str
+    new_password: str
+
 class StudentSetPassword(BaseModel):
     student_id: Optional[str] = None
     token: Optional[str] = None
@@ -67,6 +92,9 @@ class UserResponse(BaseModel):
     user_type: str
     is_first_login: bool = False
     email_verified: bool = False
+    email_delivery_status: Optional[str] = None
+    email_delivery_id: Optional[str] = None
+    message: Optional[str] = None
     
     class Config:
         from_attributes = True
