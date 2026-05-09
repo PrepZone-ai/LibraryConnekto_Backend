@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status as http_status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from uuid import UUID
@@ -19,7 +19,9 @@ router = APIRouter()
 
 @router.get("/requests", response_model=StudentRemovalRequestList)
 async def get_removal_requests(
-    status: Optional[RemovalRequestStatus] = Query(None, description="Filter by request status"),
+    request_status: Optional[RemovalRequestStatus] = Query(
+        None, alias="status", description="Filter by request status"
+    ),
     limit: int = Query(50, ge=1, le=100, description="Number of requests to return"),
     offset: int = Query(0, ge=0, description="Number of requests to skip"),
     db: Session = Depends(get_db),
@@ -32,7 +34,7 @@ async def get_removal_requests(
         # Get requests for this admin's library
         requests = removal_service.get_removal_requests(
             admin_id=current_admin.id,
-            status=status,
+            status=request_status,
             limit=limit,
             offset=offset
         )
@@ -52,7 +54,7 @@ async def get_removal_requests(
         
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching removal requests: {str(e)}"
         )
 
@@ -70,14 +72,14 @@ async def get_removal_request(
         
         if not request:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Removal request not found"
             )
         
         # Verify the request belongs to this admin's library
         if request.admin_id != current_admin.id:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=http_status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this removal request"
             )
         
@@ -87,7 +89,7 @@ async def get_removal_request(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching removal request: {str(e)}"
         )
 
@@ -107,25 +109,25 @@ async def update_removal_request(
         
         if not existing_request:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Removal request not found"
             )
         
         if existing_request.admin_id != current_admin.id:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=http_status.HTTP_403_FORBIDDEN,
                 detail="Access denied to this removal request"
             )
         
         if existing_request.status != RemovalRequestStatus.PENDING:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Only pending requests can be updated"
             )
 
         if update_data.status == RemovalRequestStatus.CASH_RECEIVED and not update_data.plan_id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="plan_id is required when recording cash payment",
             )
         
@@ -138,13 +140,13 @@ async def update_removal_request(
             )
         except ValueError as ve:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail=str(ve),
             ) from ve
         
         if not updated_request:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to update removal request"
             )
         
@@ -154,7 +156,7 @@ async def update_removal_request(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating removal request: {str(e)}"
         )
 
@@ -175,7 +177,7 @@ async def get_removal_stats(
         
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching removal stats: {str(e)}"
         )
 
@@ -199,7 +201,7 @@ async def check_overdue_students(
         
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error checking overdue students: {str(e)}"
         )
 
@@ -252,7 +254,7 @@ async def get_overdue_students(
         
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching overdue students: {str(e)}"
         )
 
@@ -276,13 +278,13 @@ async def restore_student(
         
         if not student:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=http_status.HTTP_404_NOT_FOUND,
                 detail="Student not found in your library"
             )
         
         if student.is_active:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail="Student is already active"
             )
         
@@ -291,7 +293,7 @@ async def restore_student(
         
         if not success:
             raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Failed to restore student"
             )
         
@@ -305,6 +307,6 @@ async def restore_student(
         raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error restoring student: {str(e)}"
         )

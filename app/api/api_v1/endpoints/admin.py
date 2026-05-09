@@ -241,39 +241,46 @@ async def get_library_stats(
     current_admin: AdminUser = Depends(get_current_admin)
 ):
     """Get library statistics"""
-    # Get total students
-    total_students = db.query(Student).filter(Student.admin_id == current_admin.user_id).count()
-    
-    # Get present students
-    present_students = db.query(Student).filter(
-        Student.admin_id == current_admin.user_id,
-        Student.status == "Present"
-    ).count()
-    
-    # Get admin details for total seats
-    admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_admin.user_id).first()
-    total_seats = admin_details.total_seats if admin_details else 0
-    
-    # Get pending bookings
-    pending_bookings = db.query(SeatBooking).filter(
-        SeatBooking.admin_id == current_admin.user_id,
-        SeatBooking.status == "pending"
-    ).count()
-    
-    # Calculate total revenue (sum of paid bookings only)
-    total_revenue = db.query(SeatBooking).filter(
-        SeatBooking.admin_id == current_admin.user_id,
-        SeatBooking.payment_status == "paid"
-    ).with_entities(func.sum(SeatBooking.amount)).scalar() or 0
-    
-    return LibraryStats(
-        total_students=total_students,
-        present_students=present_students,
-        total_seats=total_seats,
-        available_seats=total_seats - present_students,
-        pending_bookings=pending_bookings,
-        total_revenue=float(total_revenue)
-    )
+    try:
+        # Get total students
+        total_students = db.query(Student).filter(Student.admin_id == current_admin.user_id).count()
+
+        # Get present students
+        present_students = db.query(Student).filter(
+            Student.admin_id == current_admin.user_id,
+            Student.status == "Present"
+        ).count()
+
+        # Get admin details for total seats
+        admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_admin.user_id).first()
+        total_seats = int(admin_details.total_seats or 0) if admin_details else 0
+
+        # Get pending bookings
+        pending_bookings = db.query(SeatBooking).filter(
+            SeatBooking.admin_id == current_admin.user_id,
+            SeatBooking.status == "pending"
+        ).count()
+
+        # Calculate total revenue (sum of paid bookings only)
+        total_revenue = db.query(SeatBooking).filter(
+            SeatBooking.admin_id == current_admin.user_id,
+            SeatBooking.payment_status == "paid"
+        ).with_entities(func.sum(SeatBooking.amount)).scalar() or 0
+
+        return LibraryStats(
+            total_students=total_students,
+            present_students=present_students,
+            total_seats=total_seats,
+            available_seats=max(total_seats - present_students, 0),
+            pending_bookings=pending_bookings,
+            total_revenue=float(total_revenue)
+        )
+    except Exception:
+        logger.exception("Error in get_library_stats")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not load admin stats. Please verify database migrations are up to date."
+        )
 
 @router.post("/students", response_model=StudentResponse)
 async def create_student(
@@ -293,7 +300,13 @@ async def create_student(
     
     # Generate student ID
     from app.services.student_service import generate_student_id
-    student_id = await generate_student_id(current_admin.user_id, db)
+    try:
+        student_id = await generate_student_id(current_admin.user_id, db)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Admin profile is incomplete. Please save admin details before adding students."
+        ) from exc
     
     # Generate password setup token for email
     import uuid
@@ -310,7 +323,15 @@ async def create_student(
     )
     
     db.add(student)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Error creating student")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not create student. Please verify database migrations are up to date."
+        )
     db.refresh(student)
 
     from app.services.library_seat_reuse_service import (
@@ -326,18 +347,22 @@ async def create_student(
     from app.models.admin import AdminDetails
     admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_admin.user_id).first()
     library_name = admin_details.library_name if admin_details else "your library"
-    enqueue_email_job(
-        db=db,
-        email_type="student_password_setup",
-        to_email=student.email,
-        payload={
-            "student_id": student.student_id,
-            "mobile_no": student.mobile_no,
-            "token": password_setup_token,
-            "library_name": library_name,
-            "base_url": str(request.base_url),
-        },
-    )
+    try:
+        enqueue_email_job(
+            db=db,
+            email_type="student_password_setup",
+            to_email=student.email,
+            payload={
+                "student_id": student.student_id,
+                "mobile_no": student.mobile_no,
+                "token": password_setup_token,
+                "library_name": library_name,
+                "base_url": str(request.base_url),
+            },
+        )
+    except Exception:
+        # Student was created successfully; do not fail the request for async email queue issues.
+        logger.exception("Student created but failed to enqueue password setup email")
     
     return student
 
