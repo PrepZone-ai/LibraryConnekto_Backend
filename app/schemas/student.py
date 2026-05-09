@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -42,7 +42,17 @@ class StudentResponse(StudentBase):
     library_name: Optional[str] = None
     library_latitude: Optional[float] = None
     library_longitude: Optional[float] = None
-    
+
+    @field_validator("subscription_status", mode="before")
+    @classmethod
+    def _subscription_status_fallback(cls, v):
+        return v if v is not None else "Active"
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def _attendance_status_fallback(cls, v):
+        return v if v is not None else "Absent"
+
     class Config:
         from_attributes = True
 

@@ -6,16 +6,27 @@ from uuid import UUID
 from app.database import get_db
 from app.auth.dependencies import get_current_admin
 from app.models.admin import AdminUser
+from app.models.student_removal import RemovalRequestStatus as DbRemovalRequestStatus
 from app.services.student_removal_service import StudentRemovalService
 from app.schemas.student_removal import (
     StudentRemovalRequestResponse,
     StudentRemovalRequestUpdate,
     StudentRemovalRequestList,
     StudentRemovalStats,
-    RemovalRequestStatus
+    RemovalRequestStatus,
 )
 
 router = APIRouter()
+
+
+def _api_removal_status_to_db(
+    status: Optional[RemovalRequestStatus],
+) -> Optional[DbRemovalRequestStatus]:
+    """Map API enum (lowercase JSON values) to ORM/PostgreSQL enum members (labels PENDING, …)."""
+    if status is None:
+        return None
+    return DbRemovalRequestStatus[status.name]
+
 
 @router.get("/requests", response_model=StudentRemovalRequestList)
 async def get_removal_requests(
@@ -34,7 +45,7 @@ async def get_removal_requests(
         # Get requests for this admin's library
         requests = removal_service.get_removal_requests(
             admin_id=current_admin.id,
-            status=request_status,
+            status=_api_removal_status_to_db(request_status),
             limit=limit,
             offset=offset
         )
