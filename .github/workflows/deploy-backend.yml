@@ -27,6 +27,22 @@ jobs:
           git fetch --depth=1 origin "${GITHUB_SHA}"
           git checkout --detach FETCH_HEAD
 
+      - name: Verify deploy secrets
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+        run: |
+          missing=0
+          if [ -z "${EC2_HOST}" ]; then
+            echo "::error::Repository secret EC2_HOST is empty or not set. Add it under Settings → Secrets and variables → Actions."
+            missing=1
+          fi
+          if [ -z "${EC2_SSH_KEY}" ]; then
+            echo "::error::Repository secret EC2_SSH_KEY is empty or not set. Paste the full private key PEM (including BEGIN/END lines)."
+            missing=1
+          fi
+          exit "${missing}"
+
       - name: Deploy to EC2 via SSH
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
