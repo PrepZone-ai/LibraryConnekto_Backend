@@ -21,7 +21,7 @@ ExecStart=/home/ubuntu/backend/venv/bin/gunicorn \
     --bind 127.0.0.1:8000 \
     --timeout 120 \
     --graceful-timeout 30 \
-    --keepalive 5 \
+    --keep-alive 5 \
     --log-level info \
     --access-logfile - \
     --error-logfile -
