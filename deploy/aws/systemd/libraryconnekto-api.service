@@ -10,15 +10,27 @@ Group=ubuntu
 WorkingDirectory=/home/ubuntu/backend
 Environment="PATH=/home/ubuntu/backend/venv/bin:/usr/local/bin:/usr/bin:/bin"
 EnvironmentFile=/home/ubuntu/backend/.env
-ExecStart=/home/ubuntu/backend/venv/bin/uvicorn main:app \
-    --host 127.0.0.1 \
-    --port 8000 \
+
+# Gunicorn + UvicornWorker: production-grade multi-process server.
+# m7i-flex.large = 2 vCPUs → 4 workers (2×CPU + 1 rounded down to even).
+# --bind 127.0.0.1 keeps port 8000 off the public network; nginx proxies it.
+ExecStart=/home/ubuntu/backend/venv/bin/gunicorn \
+    -k uvicorn.workers.UvicornWorker \
+    main:app \
     --workers 4 \
+    --bind 127.0.0.1:8000 \
+    --timeout 120 \
+    --graceful-timeout 30 \
+    --keepalive 5 \
     --log-level info \
-    --access-log
+    --access-logfile - \
+    --error-logfile -
+
+# SIGHUP triggers a graceful rolling reload (old workers finish in-flight requests).
 ExecReload=/bin/kill -s HUP $MAINPID
+
 Restart=always
-RestartSec=3
+RestartSec=5
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=libraryconnekto-api

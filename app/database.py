@@ -29,12 +29,14 @@ except Exception as e:
     engine = None
     SessionLocal = None
 
-# Async database setup for async operations
+# Async database setup for async operations.
+# The async pool is kept small because most endpoints use the sync engine.
+# This prevents the two pools combined from exceeding PostgreSQL's max_connections.
 try:
     async_engine = create_async_engine(
         settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://"),
-        pool_size=settings.DB_POOL_SIZE,
-        max_overflow=settings.DB_MAX_OVERFLOW,
+        pool_size=settings.DB_ASYNC_POOL_SIZE,
+        max_overflow=settings.DB_ASYNC_MAX_OVERFLOW,
         pool_pre_ping=True,
         pool_recycle=settings.DB_POOL_RECYCLE,
         echo=False,

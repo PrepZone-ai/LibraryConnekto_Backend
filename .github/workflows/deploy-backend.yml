@@ -84,9 +84,25 @@ jobs:
           sudo systemctl restart libraryconnekto-beat
           sudo systemctl reload nginx
 
-          echo "=== Health check ==="
-          sleep 5
-          curl --fail --silent --show-error http://127.0.0.1:8000/health
+          echo "=== Health check (waiting up to 60s for workers to start) ==="
+          HEALTH_URL="http://127.0.0.1:8000/health"
+          MAX_WAIT=60
+          INTERVAL=5
+          elapsed=0
+          until curl --fail --silent --show-error "${HEALTH_URL}"; do
+            if [ "${elapsed}" -ge "${MAX_WAIT}" ]; then
+              echo ""
+              echo "❌ Service did not become healthy within ${MAX_WAIT}s"
+              echo "--- systemctl status ---"
+              sudo systemctl status libraryconnekto-api --no-pager || true
+              echo "--- last 50 journal lines ---"
+              sudo journalctl -u libraryconnekto-api -n 50 --no-pager || true
+              exit 1
+            fi
+            echo "   waiting ${elapsed}s/${MAX_WAIT}s..."
+            sleep "${INTERVAL}"
+            elapsed=$(( elapsed + INTERVAL ))
+          done
           echo
           echo "=== Deploy complete ==="
           EOF
