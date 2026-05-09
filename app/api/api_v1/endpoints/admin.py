@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from typing import List
 from fastapi.responses import StreamingResponse, Response
 import io
@@ -241,46 +241,58 @@ async def get_library_stats(
     current_admin: AdminUser = Depends(get_current_admin)
 ):
     """Get library statistics"""
-    try:
-        # Get total students
-        total_students = db.query(Student).filter(Student.admin_id == current_admin.user_id).count()
+    def _safe_count(query, label: str) -> int:
+        try:
+            return int(query.count())
+        except SQLAlchemyError:
+            logger.exception("Failed stats count query for %s", label)
+            return 0
 
-        # Get present students
-        present_students = db.query(Student).filter(
+    def _safe_scalar(query, label: str) -> float:
+        try:
+            value = query.scalar() or 0
+            return float(value)
+        except SQLAlchemyError:
+            logger.exception("Failed stats scalar query for %s", label)
+            return 0.0
+
+    # Keep dashboard operational even if one subquery breaks due to schema drift.
+    total_students = _safe_count(
+        db.query(Student).filter(Student.admin_id == current_admin.user_id),
+        "total_students",
+    )
+    present_students = _safe_count(
+        db.query(Student).filter(
             Student.admin_id == current_admin.user_id,
-            Student.status == "Present"
-        ).count()
-
-        # Get admin details for total seats
-        admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_admin.user_id).first()
-        total_seats = int(admin_details.total_seats or 0) if admin_details else 0
-
-        # Get pending bookings
-        pending_bookings = db.query(SeatBooking).filter(
+            Student.status == "Present",
+        ),
+        "present_students",
+    )
+    admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_admin.user_id).first()
+    total_seats = int(admin_details.total_seats or 0) if admin_details else 0
+    pending_bookings = _safe_count(
+        db.query(SeatBooking).filter(
             SeatBooking.admin_id == current_admin.user_id,
-            SeatBooking.status == "pending"
-        ).count()
-
-        # Calculate total revenue (sum of paid bookings only)
-        total_revenue = db.query(SeatBooking).filter(
+            SeatBooking.status == "pending",
+        ),
+        "pending_bookings",
+    )
+    total_revenue = _safe_scalar(
+        db.query(func.sum(SeatBooking.amount)).filter(
             SeatBooking.admin_id == current_admin.user_id,
-            SeatBooking.payment_status == "paid"
-        ).with_entities(func.sum(SeatBooking.amount)).scalar() or 0
+            SeatBooking.payment_status == "paid",
+        ),
+        "total_revenue",
+    )
 
-        return LibraryStats(
-            total_students=total_students,
-            present_students=present_students,
-            total_seats=total_seats,
-            available_seats=max(total_seats - present_students, 0),
-            pending_bookings=pending_bookings,
-            total_revenue=float(total_revenue)
-        )
-    except Exception:
-        logger.exception("Error in get_library_stats")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not load admin stats. Please verify database migrations are up to date."
-        )
+    return LibraryStats(
+        total_students=total_students,
+        present_students=present_students,
+        total_seats=total_seats,
+        available_seats=max(total_seats - present_students, 0),
+        pending_bookings=pending_bookings,
+        total_revenue=total_revenue,
+    )
 
 @router.post("/students", response_model=StudentResponse)
 async def create_student(
@@ -339,10 +351,15 @@ async def create_student(
         invalidate_seat_caches,
     )
 
-    if assign_next_freed_seat_to_student(db, student):
-        db.commit()
-        db.refresh(student)
-    invalidate_seat_caches(db, student)
+    try:
+        if assign_next_freed_seat_to_student(db, student):
+            db.commit()
+            db.refresh(student)
+        invalidate_seat_caches(db, student)
+    except Exception:
+        # Student creation already succeeded; do not surface seat auto-assignment issues as 500.
+        db.rollback()
+        logger.exception("Student created but seat auto-assignment/cache invalidation failed")
     
     from app.models.admin import AdminDetails
     admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_admin.user_id).first()
