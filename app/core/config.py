@@ -33,7 +33,7 @@ class Settings:
                     "SECRET_KEY environment variable must be set in non-debug environments."
                 )
         self.ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-        self.ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+        self.ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "480"))  # 8 hours
 
         # Public web app URL (password reset / setup links in emails)
         self.FRONTEND_BASE_URL = os.getenv(
