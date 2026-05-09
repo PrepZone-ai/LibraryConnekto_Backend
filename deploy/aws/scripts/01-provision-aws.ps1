@@ -50,6 +50,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# Do not treat native command stderr as terminating PowerShell errors.
+# AWS CLI sometimes writes non-fatal content to stderr.
+$PSNativeCommandUseErrorActionPreference = $false
 
 if (-not $ApiSubdomain) { $ApiSubdomain = "api.$Domain" }
 
@@ -62,7 +65,7 @@ function Invoke-Aws {
   param([Parameter(Mandatory)][string[]]$AwsArgs, [switch]$AllowFail)
   $output = & aws @AwsArgs 2>&1
   if ($LASTEXITCODE -ne 0 -and -not $AllowFail) {
-    Write-Error "aws $($AwsArgs -join ' ') failed:`n$output"
+    throw "aws $($AwsArgs -join ' ') failed (exit $LASTEXITCODE):`n$($output -join "`n")"
   }
   return ($output -join "`n")
 }
@@ -81,7 +84,8 @@ Write-Host "Bucket:        $BucketName"
 
 $state = @{}
 if (Test-Path $StateFile) {
-  $state = Get-Content $StateFile -Raw | ConvertFrom-Json -AsHashtable
+  $stateJson = Get-Content $StateFile -Raw | ConvertFrom-Json
+  $stateJson.PSObject.Properties | ForEach-Object { $state[$_.Name] = $_.Value }
   Write-Host "Loaded existing state from $StateFile" -ForegroundColor Yellow
 }
 

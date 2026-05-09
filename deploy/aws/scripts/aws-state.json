@@ -1,0 +1,14 @@
+﻿{
+    "vpc_id":  "vpc-0ab53ff6c2fb15f2b",
+    "ami_id":  "ami-0a936bb624678fd88",
+    "subnet_ids":  [
+                       "subnet-0bb4b7542fa1eb2d5",
+                       "subnet-01bab41ec24ea5f18",
+                       "subnet-0c25423aad3984734"
+                   ],
+    "key_pem_path":  "C:\\AAAA\\LIbrary\\LibraryConnekto_Backend\\deploy\\aws\\scripts\\libraryconnekto-key.pem",
+    "rds_sg_id":  "sg-034265b27720b43ef",
+    "account_id":  "836809166355",
+    "key_name":  "libraryconnekto-key",
+    "sg_id":  "sg-015c3f8ed1254462a"
+}

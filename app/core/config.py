@@ -35,12 +35,21 @@ class Settings:
         self.ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
         self.ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
+        # Public web app URL (password reset / setup links in emails)
+        self.FRONTEND_BASE_URL = os.getenv(
+            "FRONTEND_BASE_URL",
+            "http://127.0.0.1:5173",
+        ).rstrip("/")
+
         # CORS (comma-separated list). Use '*' only for local/dev.
         allowed_origins_env = os.getenv(
             "ALLOWED_ORIGINS",
             "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173",
         )
         self.ALLOWED_ORIGINS = [o.strip() for o in allowed_origins_env.split(",") if o.strip()]
+        # Ensure the configured frontend can call the API even if ALLOWED_ORIGINS was omitted in prod.
+        if self.FRONTEND_BASE_URL and self.FRONTEND_BASE_URL not in self.ALLOWED_ORIGINS:
+            self.ALLOWED_ORIGINS.append(self.FRONTEND_BASE_URL)
 
         # File Upload
         self.UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
@@ -84,12 +93,6 @@ class Settings:
         self.CELERY_TASK_SOFT_TIME_LIMIT_SECONDS = int(os.getenv("CELERY_TASK_SOFT_TIME_LIMIT_SECONDS", "120"))
         self.CELERY_TASK_TIME_LIMIT_SECONDS = int(os.getenv("CELERY_TASK_TIME_LIMIT_SECONDS", "180"))
         self.EMAIL_DELIVERY_MODE = os.getenv("EMAIL_DELIVERY_MODE", "async").lower()  # async|sync
-
-        # Public web app URL (password reset / setup links in emails)
-        self.FRONTEND_BASE_URL = os.getenv(
-            "FRONTEND_BASE_URL",
-            "http://127.0.0.1:5173",
-        ).rstrip("/")
 
         # Scheduler / Notifications
         self.EMAIL_SCHEDULER_ENABLED = os.getenv("EMAIL_SCHEDULER_ENABLED", "true").lower() in ("1", "true", "yes")
