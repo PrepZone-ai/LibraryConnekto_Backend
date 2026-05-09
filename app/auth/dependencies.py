@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 from typing import Optional
 
 from app.database import get_db
@@ -45,7 +46,14 @@ def get_current_admin(
             detail="Not enough permissions"
         )
     
-    admin = db.query(AdminUser).filter(AdminUser.user_id == current_user["user_id"]).first()
+    try:
+        admin = db.query(AdminUser).filter(AdminUser.user_id == current_user["user_id"]).first()
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unavailable. Please try again.",
+        ) from exc
+
     if admin is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -64,8 +72,15 @@ def get_current_student(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Not enough permissions"
         )
-    
-    student = db.query(Student).filter(Student.auth_user_id == current_user["user_id"]).first()
+
+    try:
+        student = db.query(Student).filter(Student.auth_user_id == current_user["user_id"]).first()
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Database temporarily unavailable. Please try again.",
+        ) from exc
+
     if student is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

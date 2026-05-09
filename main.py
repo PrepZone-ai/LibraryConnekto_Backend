@@ -1,8 +1,9 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 import os
 from datetime import datetime
 import uuid
@@ -25,6 +26,27 @@ from app.core.sentry_config import init_sentry
 
 init_sentry()
 
+_app_logger = logging.getLogger(__name__)
+
+
+async def _sqlalchemy_error_handler(request: Request, exc: SQLAlchemyError) -> JSONResponse:
+    """Return a clean JSON 503 for DB-layer errors instead of a raw text/plain 500."""
+    _app_logger.exception("Database error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Service temporarily unavailable. Please try again."},
+    )
+
+
+async def _unhandled_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Catch-all so unhandled exceptions always produce JSON, never Starlette text/plain."""
+    _app_logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please try again."},
+    )
+
+
 # Create FastAPI app
 app = FastAPI(
     title="Library Management System API",
@@ -37,6 +59,11 @@ app = FastAPI(
 limiter = get_rate_limiter()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+# These two handlers ensure unhandled DB and runtime exceptions always return JSON,
+# never the raw text/plain "Internal Server Error" from Starlette's ServerErrorMiddleware.
+app.add_exception_handler(SQLAlchemyError, _sqlalchemy_error_handler)
+app.add_exception_handler(Exception, _unhandled_error_handler)
 
 # CORS middleware - must be added before any routes
 app.add_middleware(

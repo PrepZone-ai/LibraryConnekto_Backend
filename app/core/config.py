@@ -16,9 +16,13 @@ class Settings:
             "postgresql://postgres:postgres@localhost:5432/library_management",
         )
         # Database Pool Settings
-        self.DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "20"))
-        self.DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "40"))
-        self.DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "3600"))
+        # Default is conservative: 5 base + 10 overflow = 15 max per pool.
+        # With 2 sync pools (sync + async) × 2 Uvicorn workers = 60 max connections,
+        # well within PostgreSQL's default max_connections=100.
+        # Raise DB_POOL_SIZE via env var only if your Postgres server allows it.
+        self.DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+        self.DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "10"))
+        self.DB_POOL_RECYCLE = int(os.getenv("DB_POOL_RECYCLE", "1800"))
 
         # JWT / Security
         env_secret = os.getenv("SECRET_KEY")
