@@ -55,7 +55,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
 
           BRANCH="${DEPLOY_BRANCH:-main}"
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=300 ubuntu@"${EC2_HOST}" "bash -s" <<EOF
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no -o ConnectTimeout=300 ubuntu@"${EC2_HOST}" "BRANCH=${BRANCH} bash -s" <<'EOF'
           set -euo pipefail
           echo "=== Pulling latest code ==="
           cd /home/ubuntu/backend
