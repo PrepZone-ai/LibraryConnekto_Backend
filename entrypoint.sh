@@ -13,23 +13,28 @@ echo "==> Starting LibraryConnekto Backend"
 echo "MODE=${RUN_MODE} PORT=${PORT} WORKERS=${UVICORN_WORKERS} LOG_LEVEL=${UVICORN_LOG_LEVEL}"
 echo "User: $(whoami)"
 
-# Database connection test - Skip migrations if tables exist
+# Wait for database to be reachable before running migrations
 echo "==> Testing database connection..."
-python test_db_connection.py && {
-  echo "✅ Database connection successful - skipping migrations"
-} || {
-  echo "⚠️  Database connection failed or no tables found"
-  echo "==> Running Alembic migrations..."
-  if [ -f "alembic.ini" ]; then
-    python -m alembic upgrade head || {
-      echo "❌ Alembic migration failed" >&2
-      exit 1
-    }
-    echo "✅ Database migrations completed"
-  else
-    echo "⚠️  alembic.ini not found, skipping migrations"
-  fi
-}
+for i in 1 2 3 4 5; do
+  python test_db_connection.py && break || {
+    echo "⚠️  Database not ready (attempt ${i}/5), retrying in 5s..."
+    sleep 5
+  }
+done
+
+# Always run migrations - alembic upgrade head is idempotent and safe on existing DBs.
+# Skipping migrations when tables already exist caused schema drift when new migrations
+# were added after the initial deployment.
+echo "==> Running Alembic migrations..."
+if [ -f "alembic.ini" ]; then
+  python -m alembic upgrade head || {
+    echo "❌ Alembic migration failed" >&2
+    exit 1
+  }
+  echo "✅ Database migrations completed"
+else
+  echo "⚠️  alembic.ini not found, skipping migrations"
+fi
 
 # Ensure uploads directory exists at runtime
 mkdir -p uploads/profile_images || true

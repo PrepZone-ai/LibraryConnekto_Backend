@@ -9,12 +9,12 @@ from .referral import ReferralCode, Referral
 from .subscription import SubscriptionPlan
 from .email_delivery_log import EmailDeliveryLog
 from .qr_transfer import StudentQRToken, StudentTransferRequest
-from app.database import Base
+from .student_removal import StudentRemovalRequest
 
 __all__ = [
     "Base",
     "AdminUser",
-    "AdminDetails", 
+    "AdminDetails",
     "Student",
     "StudentAttendance",
     "StudentMessage",
@@ -28,4 +28,5 @@ __all__ = [
     "EmailDeliveryLog",
     "StudentQRToken",
     "StudentTransferRequest",
+    "StudentRemovalRequest",
 ]

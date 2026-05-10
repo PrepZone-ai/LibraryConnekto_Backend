@@ -75,6 +75,9 @@ jobs:
           sudo systemctl daemon-reload
           sudo nginx -t
 
+          echo "=== Stripping Windows CRLF from .env (safe on Linux) ==="
+          sed -i 's/\r//' /home/ubuntu/backend/.env || true
+
           echo "=== Running database migrations ==="
           alembic upgrade head
 
