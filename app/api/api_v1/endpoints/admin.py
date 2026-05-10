@@ -1023,9 +1023,18 @@ async def get_admin_attendance(
     db: Session = Depends(get_db),
     current_admin: AdminUser = Depends(get_current_admin),
 ):
-    """Get paginated attendance data for a specific date or today."""
+    """Get paginated attendance data for a specific date or today.
+
+    Rule: a student record belongs to their CHECK-IN date ONLY.
+    - If a student checked in on May 10, their record is shown under May 10
+      regardless of whether they checked out at 1 AM on May 11.
+    - A student who is still active (no exit_time yet) shows on their check-in date
+      with a live-computed duration — never bleeds into the next calendar day's view.
+    - The query uses an IST-offset window so late-night IST check-ins (which cross
+      UTC midnight) are attributed to the correct IST calendar day.
+    """
     from app.models.student import StudentAttendance
-    from datetime import datetime
+    from datetime import datetime, timedelta, timezone
 
     if date:
         try:
@@ -1036,29 +1045,81 @@ async def get_admin_attendance(
                 detail="Invalid date format. Use YYYY-MM-DD",
             )
     else:
-        target_date = datetime.utcnow().date()
+        # Use local server date (IST on this machine), not UTC
+        from datetime import date as _date
+        target_date = _date.today()
+
+    # IST is UTC+5:30.  Convert the selected calendar day (IST midnight) to UTC
+    # so that the DB comparison is timezone-correct even though entry_time is
+    # stored as UTC in PostgreSQL.
+    #
+    # Example: Admin selects May 10 IST.
+    #   IST midnight May 10  = UTC 18:30 May 9   (day_start_utc)
+    #   IST midnight May 11  = UTC 18:30 May 10  (day_end_utc)
+    # Any entry_time that falls in [day_start_utc, day_end_utc) belongs to May 10 IST.
+    IST_OFFSET = timedelta(hours=5, minutes=30)
+    day_start_ist = datetime(target_date.year, target_date.month, target_date.day,
+                             0, 0, 0, tzinfo=timezone(IST_OFFSET))
+    day_end_ist   = day_start_ist + timedelta(days=1)
+
+    # Naive UTC equivalents for the SQLAlchemy filter
+    # (PostgreSQL stores UTC; comparing naive datetimes treats them as UTC)
+    day_start_utc = day_start_ist.astimezone(timezone.utc).replace(tzinfo=None)
+    day_end_utc   = day_end_ist.astimezone(timezone.utc).replace(tzinfo=None)
 
     students = db.query(Student).filter(Student.admin_id == current_admin.user_id).all()
     all_records: List[AdminAttendanceRecord] = []
+
     for student in students:
-        attendance = db.query(StudentAttendance).filter(
-            StudentAttendance.student_id == student.auth_user_id,
-            func.date(StudentAttendance.entry_time) == target_date,
-        ).first()
-        if attendance:
-            all_records.append(
-                AdminAttendanceRecord(
-                    id=str(student.id),
-                    student_id=student.student_id,
-                    student_name=student.name,
-                    email=student.email,
-                    mobile=student.mobile_no,
-                    entry_time=attendance.entry_time,
-                    exit_time=attendance.exit_time,
-                    total_duration=str(attendance.total_duration) if attendance.total_duration else None,
-                    status="Present" if not attendance.exit_time else "Completed",
-                )
+        # Show this student ONLY if they checked IN during the selected IST calendar day.
+        # Checkout can be any time (next day is fine) — the record still belongs to
+        # the check-in date. No cross-day fallback.
+        attendance = (
+            db.query(StudentAttendance)
+            .filter(
+                StudentAttendance.student_id == student.auth_user_id,
+                StudentAttendance.entry_time >= day_start_utc,
+                StudentAttendance.entry_time <  day_end_utc,
             )
+            .order_by(StudentAttendance.entry_time.desc())
+            .first()
+        )
+
+        if not attendance:
+            continue  # No check-in on this date — student not shown here
+
+        # Compute duration:
+        # • If already checked out and duration is stored → use stored value
+        # • If still active (no exit_time) → compute live from entry_time to now
+        total_duration_str = None
+        if attendance.total_duration:
+            total_duration_str = str(attendance.total_duration)
+        elif attendance.entry_time and not attendance.exit_time:
+            now_utc = datetime.utcnow()
+            entry   = attendance.entry_time
+            # Handle both naive (UTC) and tz-aware entry_time
+            if entry.tzinfo is not None:
+                now_utc = datetime.now(timezone.utc)
+            diff    = now_utc - entry
+            hours   = int(diff.total_seconds() // 3600)
+            minutes = int((diff.total_seconds() % 3600) // 60)
+            total_duration_str = f"{hours}h {minutes}m (active)"
+
+        all_records.append(
+            AdminAttendanceRecord(
+                id=str(student.id),
+                student_id=student.student_id,
+                student_name=student.name,
+                email=student.email,
+                mobile=student.mobile_no,
+                entry_time=attendance.entry_time,
+                exit_time=attendance.exit_time,
+                total_duration=total_duration_str,
+                # "Present" = still inside, "Completed" = checked out
+                status="Present" if not attendance.exit_time else "Completed",
+            )
+        )
+
     all_records.sort(key=lambda x: x.student_id)
     total = len(all_records)
     limit = min(max(1, limit), 100)
