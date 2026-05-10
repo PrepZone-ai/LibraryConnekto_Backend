@@ -65,13 +65,17 @@ def ensure_database_exists():
 def init_db():
     try:
         ensure_database_exists()
+        # Import every model so Base.metadata.create_all registers all tables.
+        # Missing an import here means create_all silently skips that table.
         from app.models.admin import AdminUser, AdminDetails
         from app.models.student import Student, StudentAttendance, StudentMessage, StudentTask, StudentExam
         from app.models.booking import SeatBooking
+        from app.models.library_freed_seat import LibraryFreedSeat
         from app.models.referral import ReferralCode, Referral
         from app.models.subscription import SubscriptionPlan
         from app.models.email_delivery_log import EmailDeliveryLog
-        # Only create tables, do not try to create the database itself for cloud DBs
+        from app.models.qr_transfer import StudentQRToken, StudentTransferRequest
+        from app.models.student_removal import StudentRemovalRequest
         if engine is not None:
             Base.metadata.create_all(bind=engine)
         else:

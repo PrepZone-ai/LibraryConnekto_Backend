@@ -268,7 +268,11 @@ async def get_library_stats(
         ),
         "present_students",
     )
-    admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_admin.user_id).first()
+    try:
+        admin_details = db.query(AdminDetails).filter(AdminDetails.user_id == current_admin.user_id).first()
+    except SQLAlchemyError:
+        logger.exception("Failed stats query for admin_details")
+        admin_details = None
     total_seats = int(admin_details.total_seats or 0) if admin_details else 0
     pending_bookings = _safe_count(
         db.query(SeatBooking).filter(
@@ -303,7 +307,14 @@ async def create_student(
 ):
     """Create a new student and send login credentials email"""
     # Check if student already exists
-    existing_student = db.query(Student).filter(Student.email == student_data.email.lower()).first()
+    try:
+        existing_student = db.query(Student).filter(Student.email == student_data.email.lower()).first()
+    except SQLAlchemyError:
+        logger.exception("DB error checking existing student")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service temporarily unavailable. Please try again.",
+        )
     if existing_student:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
