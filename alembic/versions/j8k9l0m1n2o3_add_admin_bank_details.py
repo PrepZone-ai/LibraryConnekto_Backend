@@ -16,10 +16,24 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("admin_details", sa.Column("bank_account_holder_name", sa.String(), nullable=True))
-    op.add_column("admin_details", sa.Column("bank_account_number", sa.String(), nullable=True))
-    op.add_column("admin_details", sa.Column("bank_ifsc_code", sa.String(), nullable=True))
-    op.add_column("admin_details", sa.Column("bank_name", sa.String(), nullable=True))
+    conn = op.get_bind()
+    existing = {
+        row[0]
+        for row in conn.execute(
+            sa.text(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_name='admin_details'"
+            )
+        )
+    }
+    for col_name, col_type in [
+        ("bank_account_holder_name", sa.String()),
+        ("bank_account_number", sa.String()),
+        ("bank_ifsc_code", sa.String()),
+        ("bank_name", sa.String()),
+    ]:
+        if col_name not in existing:
+            op.add_column("admin_details", sa.Column(col_name, col_type, nullable=True))
 
 
 def downgrade() -> None:

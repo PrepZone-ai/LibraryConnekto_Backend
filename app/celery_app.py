@@ -24,6 +24,17 @@ celery_app.conf.update(
     task_soft_time_limit=settings.CELERY_TASK_SOFT_TIME_LIMIT_SECONDS,
     task_time_limit=settings.CELERY_TASK_TIME_LIMIT_SECONDS,
     imports=("app.tasks.email_tasks",),
+    # Prevent .delay() from blocking the gunicorn worker thread if the broker
+    # is temporarily unreachable.  With these settings the publish attempt
+    # times out quickly (5 s) and raises so the caller can catch and log it
+    # rather than hanging until the OS TCP timeout (minutes).
+    broker_connection_retry=False,
+    broker_connection_timeout=5,
+    broker_transport_options={
+        "socket_timeout": 5,
+        "socket_connect_timeout": 5,
+        "retry_on_timeout": False,
+    },
 )
 
 # Windows: default prefork pool breaks task dispatch (billiard/multiprocessing);

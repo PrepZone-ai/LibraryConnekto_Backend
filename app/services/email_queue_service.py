@@ -37,8 +37,17 @@ def enqueue_email_job(
         logger.info("Processing email job %s (%s) synchronously", log.id, email_type)
         process_email_delivery(str(log.id))
     else:
-        process_email_delivery.delay(str(log.id))
-        logger.info("Queued email job %s (%s)", log.id, email_type)
+        try:
+            process_email_delivery.delay(str(log.id))
+            logger.info("Queued email job %s (%s)", log.id, email_type)
+        except Exception:
+            # Broker unreachable — task stays in DB with status "queued" for manual retry.
+            # Do NOT let a Celery broker error block the API response or crash the worker.
+            logger.exception(
+                "Failed to enqueue email job %s (%s) — broker may be unreachable",
+                log.id,
+                email_type,
+            )
     return log.id
 
 

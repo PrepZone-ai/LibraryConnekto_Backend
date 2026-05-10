@@ -16,7 +16,15 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("admin_details", sa.Column("bank_branch_name", sa.String(), nullable=True))
+    conn = op.get_bind()
+    exists = conn.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name='admin_details' AND column_name='bank_branch_name'"
+        )
+    ).scalar()
+    if not exists:
+        op.add_column("admin_details", sa.Column("bank_branch_name", sa.String(), nullable=True))
 
 
 def downgrade() -> None:
