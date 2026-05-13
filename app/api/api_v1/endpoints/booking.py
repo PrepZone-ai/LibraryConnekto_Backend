@@ -456,6 +456,8 @@ async def verify_student_booking_token_payment(
     current_user: dict = Depends(get_current_student)
 ):
     """Verify Rs.1 token payment and create a pending booking request for admin review."""
+    if current_user.get("user_type") == "admin":
+        raise HTTPException(status_code=403, detail="Admins cannot book seats")
     from app.services.razorpay_service import razorpay_service
     # Extract verification fields
     required_fields = ["razorpay_order_id", "razorpay_payment_id", "razorpay_signature", "library_id", "date", "start_time", "end_time"]
