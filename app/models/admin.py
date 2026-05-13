@@ -52,6 +52,9 @@ class AdminDetails(Base):
     bank_branch_name = Column(String, nullable=True)
     # Razorpay Route: linked account id (acc_…) for settling non-token payments to this library
     razorpay_linked_account_id = Column(String, nullable=True)
+    # Library facility information
+    facility_images = Column(ARRAY(String), nullable=True)
+    facility_description = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     

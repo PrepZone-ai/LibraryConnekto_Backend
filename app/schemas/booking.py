@@ -97,6 +97,8 @@ class LibraryInfo(BaseModel):
     distance: Optional[float] = None
     has_shift_system: bool = False
     shift_timings: Optional[List[str]] = None
+    facility_images: Optional[List[str]] = None
+    facility_description: Optional[str] = None
 
     class Config:
         from_attributes = True

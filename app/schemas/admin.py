@@ -19,6 +19,8 @@ class AdminDetailsBase(BaseModel):
     bank_name: Optional[str] = None
     bank_branch_name: Optional[str] = None
     razorpay_linked_account_id: Optional[str] = None
+    facility_images: Optional[List[str]] = None
+    facility_description: Optional[str] = None
 
 class AdminDetailsCreate(AdminDetailsBase):
     referral_code: Optional[str] = None
@@ -41,6 +43,8 @@ class AdminDetailsUpdate(BaseModel):
     bank_name: Optional[str] = None
     bank_branch_name: Optional[str] = None
     razorpay_linked_account_id: Optional[str] = None
+    facility_images: Optional[List[str]] = None
+    facility_description: Optional[str] = None
 
 class AdminDetailsResponse(AdminDetailsBase):
     id: UUID
@@ -49,6 +53,7 @@ class AdminDetailsResponse(AdminDetailsBase):
     created_at: datetime
     updated_at: datetime
     is_complete: bool = False
+    bank_details_complete: bool = False
 
     class Config:
         from_attributes = True

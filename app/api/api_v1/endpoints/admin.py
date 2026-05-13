@@ -144,7 +144,21 @@ async def get_admin_details(
         admin_details.total_seats > 0
     )
     
-    # Create a proper response object with is_complete field
+    # Check if bank details are complete
+    bank_details_complete = (
+        admin_details.bank_account_holder_name and 
+        admin_details.bank_account_holder_name.strip() and
+        admin_details.bank_account_number and 
+        admin_details.bank_account_number.strip() and
+        admin_details.bank_ifsc_code and 
+        admin_details.bank_ifsc_code.strip() and
+        admin_details.bank_name and 
+        admin_details.bank_name.strip() and
+        admin_details.bank_branch_name and 
+        admin_details.bank_branch_name.strip()
+    )
+    
+    # Create a proper response object with is_complete and bank_details_complete fields
     return AdminDetailsResponse(
         id=admin_details.id,
         user_id=admin_details.user_id,
@@ -164,9 +178,12 @@ async def get_admin_details(
         bank_name=admin_details.bank_name,
         bank_branch_name=admin_details.bank_branch_name,
         razorpay_linked_account_id=admin_details.razorpay_linked_account_id,
+        facility_images=admin_details.facility_images,
+        facility_description=admin_details.facility_description,
         created_at=admin_details.created_at,
         updated_at=admin_details.updated_at,
-        is_complete=is_complete
+        is_complete=is_complete,
+        bank_details_complete=bank_details_complete
     )
 
 @router.put("/details", response_model=AdminDetailsResponse)
@@ -210,7 +227,21 @@ async def update_admin_details(
         admin_details.total_seats > 0
     )
     
-    # Create a proper response object with is_complete field
+    # Check if bank details are complete
+    bank_details_complete = (
+        admin_details.bank_account_holder_name and 
+        admin_details.bank_account_holder_name.strip() and
+        admin_details.bank_account_number and 
+        admin_details.bank_account_number.strip() and
+        admin_details.bank_ifsc_code and 
+        admin_details.bank_ifsc_code.strip() and
+        admin_details.bank_name and 
+        admin_details.bank_name.strip() and
+        admin_details.bank_branch_name and 
+        admin_details.bank_branch_name.strip()
+    )
+    
+    # Create a proper response object with is_complete and bank_details_complete fields
     return AdminDetailsResponse(
         id=admin_details.id,
         user_id=admin_details.user_id,
@@ -230,9 +261,12 @@ async def update_admin_details(
         bank_name=admin_details.bank_name,
         bank_branch_name=admin_details.bank_branch_name,
         razorpay_linked_account_id=admin_details.razorpay_linked_account_id,
+        facility_images=admin_details.facility_images,
+        facility_description=admin_details.facility_description,
         created_at=admin_details.created_at,
         updated_at=admin_details.updated_at,
-        is_complete=is_complete
+        is_complete=is_complete,
+        bank_details_complete=bank_details_complete
     )
 
 @router.get("/stats", response_model=LibraryStats)
